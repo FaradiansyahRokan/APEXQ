@@ -1412,6 +1412,7 @@ def generate_json_report(result: SimulationResult) -> Dict:
             "initial_balance"     : result.config.initial_balance,
             "risk_per_trade"      : result.config.risk_per_trade,
             "scan_universe"       : result.config.scan_universe,
+            "lookback_years"      : result.config.lookback_years,
             "tp_rr_ratio"         : result.config.tp_rr_ratio,
             "min_screener_score"  : result.config.min_screener_score,
             "use_adaptive_kelly"  : result.config.use_adaptive_kelly,

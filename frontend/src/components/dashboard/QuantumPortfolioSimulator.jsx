@@ -178,6 +178,7 @@ const DEFAULT_CONFIG = {
   circuit_breaker_dd   : 15,
   max_risk_cap_pct     : 3.0,
   use_partial_tp       : true,
+  lookback_years       : 1,
 };
 
 export default function QuantumPortfolioSimulator() {
@@ -261,7 +262,7 @@ export default function QuantumPortfolioSimulator() {
         </h1>
         <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.7, maxWidth: 680 }}>
           Pipeline kuantitatif 4 layer: Screener → 3-Layer Confirmation Gate → Kelly-Adaptive Sizing → Partial TP Risk Manager.
-          Setiap trade harus lolos 3 gate sebelum dieksekusi.
+          Mendukung analisis data historis hingga 10 tahun untuk bukti validitas strategi yang lebih kuat.
         </p>
       </div>
 
@@ -307,6 +308,7 @@ export default function QuantumPortfolioSimulator() {
             { key: "risk_per_trade",       label: "Base Risk/Trade",     suffix: "%" },
             { key: "tp_rr_ratio",          label: "Reward:Risk Ratio",   suffix: ":1" },
             { key: "min_screener_score",   label: "Min Screener Score",  suffix: "" },
+            { key: "lookback_years",       label: "Lookback Period",     suffix: "Years" },
           ].map(({ key, label, prefix, suffix }) => (
             <div key={key}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7 }}>{label}</div>
