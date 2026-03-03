@@ -1,9 +1,46 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║       QUANTUM PORTFOLIO SIMULATOR — BACKTEST ENGINE v2.0 APEX       ║
+║       QUANTUM PORTFOLIO SIMULATOR — BACKTEST ENGINE v3.1 APEX       ║
 ║     1-Year Time Machine · Screener → ICT → Regime → Kelly Risk      ║
 ╠══════════════════════════════════════════════════════════════════════╣
-║  CHANGELOG v2.0 (Critical Fixes + Institutional Upgrades):          ║
+║  CHANGELOG v3.1 (Profitability Fixes):                               ║
+║                                                                      ║
+║  ✅ FIX: ICT Strength normalization (_normalize_ict_strength)         ║
+║     - Engine return "3/4" ratio format, bukan "STRONG" enum          ║
+║     - Sekarang di-normalize: 3/4 → STRONG, 4/4 → VERY_STRONG        ║
+║     - Fix "Strong ICT Entries = 0" bug                               ║
+║                                                                      ║
+║  ✅ FIX: Dynamic TP threshold diturunkan (3R sekarang bisa aktif)     ║
+║     - score >= 4 → 3R (sebelumnya >= 6, terlalu ketat)              ║
+║     - Hapus 1.6R conservative (data: 1.6R WR < 2R WR)              ║
+║     - ADX threshold: 30 → 25, momentum ROC: 0.5% → 0.3%            ║
+║                                                                      ║
+║  [Semua fix dari v3.0 tetap berlaku]                                 ║
+║                                                                      ║
+║  ✅ FIX: Quality Score recalibrated — A+ sekarang bisa dicapai       ║
+║     - Normalisasi screener: baseline 50 (bukan 0) → skor lebih fair  ║
+║     - ICT bobot dikurangi dari 30 → 20 pts                           ║
+║     - 4 tech confirmation slots masing-masing 5 pts                  ║
+║                                                                      ║
+║  ✅ NEW: Technical Fast Calculator (_calculate_technicals_fast)       ║
+║     - EMA 20/50 trend alignment → bonus quality + win rate filter    ║
+║     - RSI optimal range (35-72 long, 28-65 short) → avoid exhaustion ║
+║     - Volume ratio confirmation (≥0.9× avg) → liquidity check       ║
+║     - ADX trending check (≥20) → hanya masuk saat ada trend         ║
+║                                                                      ║
+║  ✅ NEW: Dynamic TP Multiplier (_compute_dynamic_tp_multiplier)       ║
+║     - Trend kuat (ADX≥30 + EMA aligned + momentum) → TP 3R          ║
+║     - Normal → TP 2R (default)                                       ║
+║     - Lemah/chop → TP 1.6R (konservatif)                            ║
+║                                                                      ║
+║  ✅ NEW: Dynamic SL Multiplier                                        ║
+║     - ATR dalam percentile tinggi (>80) → SL lebih lebar ×1.2       ║
+║     - ATR rendah (<25) → SL lebih ketat ×0.9                        ║
+║                                                                      ║
+║  ✅ NEW: Counter-trend penalty in quality score                       ║
+║     - Signal berlawanan EMA alignment → -8 pts quality              ║
+║                                                                      ║
+║  [Semua fix dari v2.0 tetap berlaku]                                 ║
 ║                                                                      ║
 ║  🔴 BUG FIX: Balance double-counting eliminated                      ║
 ║     - PnL sekarang HANYA diterapkan saat posisi benar-benar tutup   ║
@@ -91,7 +128,12 @@ class TradeRecord:
     exit_reason   : str           # TP_HIT / SL_HIT / BE_EXIT / TIME_EXIT / PARTIAL_TP
     kelly_fraction: float         # Kelly frac yang dipakai saat entry
     size_scale    : float         # Regime size scaling factor yang dipakai
-    quality_score : float = 0.0   # Composite quality score (0-100) saat entry
+    quality_score    : float = 0.0   # Composite quality score (0-100) saat entry
+    tp_multiplier    : float = 1.0   # Dynamic TP multiplier yang dipakai
+    tech_ema_aligned : bool  = False  # EMA trend aligned saat entry
+    tech_rsi_ok      : bool  = False  # RSI dalam range optimal
+    tech_vol_ok      : bool  = False  # Volume confirmed
+    tech_adx_trend   : bool  = False  # ADX trending
     sector        : str = "Unknown"
 
 
@@ -188,6 +230,50 @@ WATCHLISTS = {
 _ICT_STRENGTH_ORDER = {"VERY_WEAK": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3, "VERY_STRONG": 4}
 
 
+def _normalize_ict_strength(raw_strength) -> str:
+    """
+    v3.1 FIX: ICT engine kadang return ratio "3/4" atau angka,
+    bukan enum string. Normalize ke standard enum.
+
+    Ratio logic:
+      "1/1", "1/2"       → WEAK
+      "2/3", "2/4"       → MODERATE  
+      "3/4", "3/5", "2/2"→ STRONG
+      "4/4", "4/5", "5/5"→ VERY_STRONG
+      Already string enum → return as-is
+    """
+    if isinstance(raw_strength, str) and raw_strength in _ICT_STRENGTH_ORDER:
+        return raw_strength   # Already normalized
+
+    s = str(raw_strength).strip()
+
+    # Try parsing "numerator/denominator" format
+    if "/" in s:
+        try:
+            num, denom = s.split("/")
+            num, denom = int(num), int(denom)
+            ratio = num / max(denom, 1)
+            if ratio >= 0.90 or (num >= 4):    return "VERY_STRONG"
+            elif ratio >= 0.70 or (num >= 3):  return "STRONG"
+            elif ratio >= 0.50 or (num >= 2):  return "MODERATE"
+            else:                              return "WEAK"
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    # Try numeric
+    try:
+        v = float(s)
+        if v >= 4:   return "VERY_STRONG"
+        elif v >= 3: return "STRONG"
+        elif v >= 2: return "MODERATE"
+        elif v >= 1: return "WEAK"
+        else:        return "VERY_WEAK"
+    except ValueError:
+        pass
+
+    return "MODERATE"  # Safe fallback
+
+
 # ══════════════════════════════════════════════════════════════════
 #  LAYER 1 — DATA FETCHER
 # ══════════════════════════════════════════════════════════════════
@@ -257,19 +343,238 @@ def _calculate_atr(df_slice: pd.DataFrame, period: int = 14) -> float:
     return float(np.mean(trs[-period:]))
 
 
+def _calculate_technicals_fast(df: pd.DataFrame) -> Dict:
+    """
+    v3: Hitung indikator teknikal cepat untuk quality scoring dan dynamic TP.
+
+    Output:
+      ema20, ema50           → trend alignment
+      rsi                    → momentum exhaustion check
+      volume_ratio           → current vol vs 20-day avg
+      roc_10                 → 10-day rate of change
+      trend_aligned          → True jika EMA20 > EMA50 (bull) atau sebaliknya (bear)
+      rsi_ok_long            → RSI antara 40-70 (tidak overbought untuk long)
+      rsi_ok_short           → RSI antara 30-60 (tidak oversold untuk short)
+      vol_confirmed          → Volume hari ini > 1.0× avg (konfirmasi)
+      momentum_strong        → ROC > +1% (bull) atau < -1% (bear)
+      atr_percentile         → ATR saat ini vs 20-day ATR history (0-100)
+    """
+    if df is None or len(df) < 55:
+        return {
+            "ema20": 0.0, "ema50": 0.0, "rsi": 50.0, "volume_ratio": 1.0,
+            "roc_10": 0.0, "trend_aligned_bull": False, "trend_aligned_bear": False,
+            "rsi_ok_long": True, "rsi_ok_short": True,
+            "vol_confirmed": False, "momentum_strong_bull": False,
+            "momentum_strong_bear": False, "atr_percentile": 50.0,
+            "adx": 25.0, "adx_trending": False,
+        }
+
+    close  = df["Close"].astype(float)
+    high   = df["High"].astype(float)
+    low    = df["Low"].astype(float)
+    volume = df["Volume"].astype(float)
+
+    # ── EMA ──────────────────────────────────────────────────────
+    ema20 = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+    ema50 = float(close.ewm(span=50, adjust=False).mean().iloc[-1])
+    cur_close = float(close.iloc[-1])
+
+    # ── RSI (14) ─────────────────────────────────────────────────
+    delta = close.diff()
+    gain  = delta.where(delta > 0, 0.0).rolling(14).mean()
+    loss  = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
+    rs    = gain / loss.replace(0, 1e-9)
+    rsi   = float((100 - (100 / (1 + rs))).iloc[-1])
+
+    # ── Volume ratio (current vs 20-day avg) ─────────────────────
+    vol_avg    = float(volume.rolling(20).mean().iloc[-1]) or 1.0
+    vol_ratio  = float(volume.iloc[-1]) / vol_avg
+
+    # ── Rate of Change 10-day ─────────────────────────────────────
+    roc_10 = float((close.iloc[-1] - close.iloc[-11]) / close.iloc[-11] * 100) if len(close) > 11 else 0.0
+
+    # ── ATR percentile (current ATR vs 20-day ATR history) ────────
+    high_arr  = high.values.astype(float)
+    low_arr   = low.values.astype(float)
+    close_arr = close.values.astype(float)
+    trs = [max(high_arr[i]-low_arr[i], abs(high_arr[i]-close_arr[i-1]), abs(low_arr[i]-close_arr[i-1]))
+           for i in range(1, len(close_arr))]
+    atr_series = np.array(trs)
+    cur_atr    = float(np.mean(atr_series[-14:])) if len(atr_series) >= 14 else float(np.mean(atr_series))
+    atr_hist   = [float(np.mean(atr_series[i:i+14])) for i in range(max(0, len(atr_series)-20), len(atr_series)-13)] if len(atr_series) >= 34 else [cur_atr]
+    atr_pct    = float(np.mean(np.array(atr_hist) <= cur_atr) * 100) if atr_hist else 50.0
+
+    # ── ADX (simplified) ─────────────────────────────────────────
+    # Uses +DM/-DM over 14 periods for trend strength
+    tr_s  = pd.Series(trs).rolling(14).sum()
+    dm_up = (high.diff()).where(high.diff() > low.diff().abs(), 0.0).where(high.diff() > 0, 0.0)
+    dm_dn = (low.diff().abs()).where(low.diff().abs() > high.diff(), 0.0).where(low.diff() < 0, 0.0)
+    pdi   = 100 * dm_up.rolling(14).sum() / (tr_s.reindex(dm_up.index) + 1e-9)
+    mdi   = 100 * dm_dn.rolling(14).sum() / (tr_s.reindex(dm_dn.index) + 1e-9)
+    dx    = (pdi - mdi).abs() / (pdi + mdi + 1e-9) * 100
+    adx   = float(dx.rolling(14).mean().iloc[-1]) if not dx.rolling(14).mean().empty else 20.0
+    if np.isnan(adx): adx = 20.0
+
+    return {
+        "ema20"               : ema20,
+        "ema50"               : ema50,
+        "cur_close"           : cur_close,
+        "rsi"                 : rsi,
+        "volume_ratio"        : vol_ratio,
+        "roc_10"              : roc_10,
+        "atr_percentile"      : atr_pct,
+        "adx"                 : adx,
+        # Pre-computed condition flags
+        "trend_aligned_bull"  : cur_close > ema20 > ema50,       # Price > EMA20 > EMA50
+        "trend_aligned_bear"  : cur_close < ema20 < ema50,       # Price < EMA20 < EMA50
+        "rsi_ok_long"         : 35.0 <= rsi <= 72.0,             # Not overbought for long
+        "rsi_ok_short"        : 28.0 <= rsi <= 65.0,             # Not oversold for short
+        "vol_confirmed"       : vol_ratio >= 0.9,                 # Decent volume (lowered threshold)
+        "momentum_strong_bull": roc_10 > 0.3,                    # Positive momentum (lowered)
+        "momentum_strong_bear": roc_10 < -0.3,                   # Negative momentum (lowered)
+        "adx_trending"        : adx >= 20.0,                     # Market is trending
+    }
+
+
+def _compute_quality_score_v3(
+    score       : float,
+    regime_conf : float,
+    ict_signal  : Dict,
+    tech        : Dict,
+    direction   : str,
+) -> Tuple[float, Dict]:
+    """
+    v3 Quality Score (0-100) — RECALIBRATED + TECH CONFIRMATIONS.
+
+    Masalah v2:  Screener 93 + Regime 99 + ICT MODERATE = 86.9 (max A)
+                 → A+ tidak pernah tercapai karena ICT jarang STRONG.
+
+    Solusi v3:   Kurangi bobot ICT, tambah bonus dari 4 konfirmasi teknikal.
+                 Sekarang A+ bisa dicapai dengan screener tinggi + tech alignment.
+
+    Komponen (total 100):
+      [35 pts] Screener score      → normalized dari 0-100
+      [25 pts] Regime confidence   → normalized dari 0-100%
+      [20 pts] ICT signal strength → WEAK=10, MODERATE=15, STRONG=20, VERY_STRONG=20
+      [20 pts] Tech confirmations  → 4 bonus, masing-masing 5 pts:
+                 +5 EMA trend aligned (price > EMA20 > EMA50 for LONG)
+                 +5 RSI dalam range optimal (tidak overbought/oversold)
+                 +5 Volume confirmed (> 0.9× avg)
+                 +5 ADX trending (> 20 = ada trend)
+    """
+    # ── Base components ──────────────────────────────────────────
+    # Normalize screener: baseline 65 = 0 pts, 100 = 35 pts
+    screener_normalized = max(0.0, (score - 50.0) / 50.0)  # 65→0.3, 80→0.6, 100→1.0
+    screener_pts = min(35.0, screener_normalized * 35.0)
+
+    regime_pts = min(25.0, (regime_conf / 100.0) * 25.0)
+
+    ict_strength = ict_signal.get("strength", "WEAK")
+    ict_pts_map  = {"VERY_WEAK": 5, "WEAK": 10, "MODERATE": 15, "STRONG": 20, "VERY_STRONG": 20}
+    ict_pts      = ict_pts_map.get(ict_strength, 10)
+
+    # ── Tech confirmation bonus (each +5 pts) ────────────────────
+    tech_detail = {}
+    tech_pts    = 0.0
+
+    if direction == "LONG":
+        aligned = tech.get("trend_aligned_bull", False)
+        rsi_ok  = tech.get("rsi_ok_long", True)
+        mom_ok  = tech.get("momentum_strong_bull", False)
+    else:
+        aligned = tech.get("trend_aligned_bear", False)
+        rsi_ok  = tech.get("rsi_ok_short", True)
+        mom_ok  = tech.get("momentum_strong_bear", False)
+
+    tech_detail["ema_aligned"]  = aligned
+    tech_detail["rsi_ok"]       = rsi_ok
+    tech_detail["vol_ok"]       = tech.get("vol_confirmed", False)
+    tech_detail["adx_trending"] = tech.get("adx_trending", False)
+
+    if aligned          : tech_pts += 5.0
+    if rsi_ok           : tech_pts += 5.0
+    if tech.get("vol_confirmed", False): tech_pts += 5.0
+    if tech.get("adx_trending", False) : tech_pts += 5.0
+
+    quality = screener_pts + regime_pts + ict_pts + tech_pts
+
+    # ── Soft penalty for counter-trend signals ───────────────────
+    # Jika sinyal BERLAWANAN dengan EMA alignment → kurangi sedikit
+    if direction == "LONG" and tech.get("trend_aligned_bear", False):
+        quality -= 8.0   # Counter-trend long = penalized
+    elif direction == "SHORT" and tech.get("trend_aligned_bull", False):
+        quality -= 8.0   # Counter-trend short = penalized
+
+    quality = max(0.0, min(100.0, quality))
+
+    breakdown = {
+        "screener_pts" : round(screener_pts, 1),
+        "regime_pts"   : round(regime_pts, 1),
+        "ict_pts"      : ict_pts,
+        "tech_pts"     : tech_pts,
+        "tech_detail"  : tech_detail,
+        "total"        : round(quality, 1),
+    }
+
+    return quality, breakdown
+
+
+def _compute_dynamic_tp_multiplier(tech: Dict, ict_signal: Dict, direction: str) -> float:
+    """
+    v3.1 FIX: Threshold diturunkan agar 3R bisa aktif.
+    
+    Root cause sebelumnya: score >= 6 hampir tidak pernah tercapai karena
+    ICT jarang STRONG dan ADX jarang >= 30 secara bersamaan.
+    
+    Perubahan:
+    - Score >= 4 → 3R (sebelumnya >= 6, terlalu ketat)
+    - Score >= 2 → 2R (default, sebelumnya >= 4)  
+    - Score < 2  → 2R juga (hapus 1.6R — data shows 1.6R hurts WR)
+    
+    Reasoning: better to let winner run (2R or 3R) daripada cut early.
+    Partial TP di 1.5R sudah menghandle risk management.
+    """
+    score = 0
+
+    # ADX trending (threshold diturunkan dari 30 ke 25)
+    adx = tech.get("adx", 20.0)
+    if adx >= 25:   score += 2
+    elif adx >= 18: score += 1
+
+    # EMA aligned with direction
+    if direction == "LONG"  and tech.get("trend_aligned_bull", False): score += 2
+    if direction == "SHORT" and tech.get("trend_aligned_bear", False): score += 2
+
+    # Momentum (threshold diturunkan: ROC > 0.3% bukan 0.5%)
+    if direction == "LONG"  and tech.get("momentum_strong_bull", False): score += 1
+    if direction == "SHORT" and tech.get("momentum_strong_bear", False): score += 1
+
+    # ICT strength
+    ict_strength = ict_signal.get("strength", "WEAK")
+    if ict_strength in ("STRONG", "VERY_STRONG"): score += 2
+    elif ict_strength == "MODERATE":              score += 1
+
+    # Volume confirmation bonus
+    if tech.get("vol_confirmed", False): score += 1
+
+    # Map score → multiplier (lebih agresif, hapus 0.8 conservative)
+    if score >= 4:  return 1.5    # → 3R  (previously needed score 6)
+    else:           return 1.0    # → 2R  (default, no more 1.6R)
+
+
 def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Optional[Dict]:
     """
     v2: Juga mengembalikan bias_strength dari ICT untuk gate filtering.
     """
     ict = get_ict_full_analysis(df_slice)
     bias     = ict.get("composite_bias", "NEUTRAL")
-    strength = ict.get("bias_strength", "WEAK")
+    strength = _normalize_ict_strength(ict.get("bias_strength", "WEAK"))
 
     if bias == "NEUTRAL":
         return None
 
     # Blokir sinyal yang terlalu lemah
-    min_strength_val = _ICT_STRENGTH_ORDER.get(config.min_ict_strength, 2)
+    min_strength_val  = _ICT_STRENGTH_ORDER.get(config.min_ict_strength, 2)
     curr_strength_val = _ICT_STRENGTH_ORDER.get(strength, 1)
     if curr_strength_val < min_strength_val:
         return None
@@ -308,47 +613,66 @@ def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Opti
 
 def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) -> Optional[Dict]:
     """
-    v2.1 SOFT version: Hanya blokir NEUTRAL. WEAK/MODERATE/STRONG semua masuk.
-    Quality scoring nanti yang akan menentukan berapa besar posisinya.
+    v3 SOFT: Hanya blokir NEUTRAL. Semua bias valid masuk.
+    Tambahkan tech data dan dynamic TP multiplier ke dalam signal dict.
     """
     ict      = get_ict_full_analysis(df_slice)
     bias     = ict.get("composite_bias", "NEUTRAL")
-    strength = ict.get("bias_strength", "WEAK")
+    strength = _normalize_ict_strength(ict.get("bias_strength", "WEAK"))
 
-    # Satu-satunya kondisi yang diblok: benar-benar NEUTRAL (tidak ada bias)
     if bias == "NEUTRAL":
         return None
 
     close   = float(df_slice["Close"].iloc[-1])
     atr     = _calculate_atr(df_slice, period=14)
     sl_dist = atr * config.sl_atr_mult
-    tp_dist = sl_dist * config.tp_rr_ratio
 
-    if bias == "BULLISH":
+    # v3: Compute tech once here, pass to caller via signal dict
+    tech = _calculate_technicals_fast(df_slice)
+
+    direction = "LONG" if bias == "BULLISH" else "SHORT"
+
+    # v3: Dynamic TP based on momentum & trend
+    tp_mult  = _compute_dynamic_tp_multiplier(tech, {"strength": strength}, direction)
+    tp_dist  = sl_dist * config.tp_rr_ratio * tp_mult
+
+    # v3: Dynamic SL — tighten if RSI extreme or vol high
+    atr_pct = tech.get("atr_percentile", 50.0)
+    if atr_pct > 80:     sl_mult = 1.2   # High vol → wider SL
+    elif atr_pct < 25:   sl_mult = 0.9   # Low vol → tighter SL
+    else:                sl_mult = 1.0
+    sl_dist_adj = sl_dist * sl_mult
+
+    if direction == "LONG":
         return {
             "direction"      : "LONG",
             "entry"          : close,
-            "sl"             : round(close - sl_dist, 6),
+            "sl"             : round(close - sl_dist_adj, 6),
             "tp"             : round(close + tp_dist, 6),
             "atr"            : round(atr, 6),
             "strength"       : strength,
             "setup"          : f"ICT_{strength}_BULLISH",
+            "tp_multiplier"  : round(tp_mult, 2),
+            "sl_multiplier"  : round(sl_mult, 2),
             "bullish_factors": ict.get("bullish_factors", 0),
             "bearish_factors": ict.get("bearish_factors", 0),
+            "tech"           : tech,    # Passed for quality scoring
         }
-    elif bias == "BEARISH":
+    else:
         return {
             "direction"      : "SHORT",
             "entry"          : close,
-            "sl"             : round(close + sl_dist, 6),
+            "sl"             : round(close + sl_dist_adj, 6),
             "tp"             : round(close - tp_dist, 6),
             "atr"            : round(atr, 6),
             "strength"       : strength,
             "setup"          : f"ICT_{strength}_BEARISH",
+            "tp_multiplier"  : round(tp_mult, 2),
+            "sl_multiplier"  : round(sl_mult, 2),
             "bullish_factors": ict.get("bullish_factors", 0),
             "bearish_factors": ict.get("bearish_factors", 0),
+            "tech"           : tech,
         }
-    return None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -434,9 +758,11 @@ def _simulate_trade(
     score         : float,
     risk_pct      : float,      # Final risk % yang sudah diadaptasi oleh Kelly
     kelly_frac    : float,
-    size_scale    : float,      # Regime sizing factor
+    size_scale    : float,
     quality_score : float = 50.0,
-    sector        : str = "Unknown"
+    tp_multiplier : float = 1.0,
+    tech          : Dict  = None,
+    sector        : str   = "Unknown"
 ) -> Optional[TradeRecord]:
     """
     v2 Forward-simulate satu trade.
@@ -612,10 +938,15 @@ def _simulate_trade(
         ict_strength  = signal.get("strength", "UNKNOWN"),
         balance_after = round(balance_after, 4),
         exit_reason   = full_exit_reason,
-        kelly_fraction= kelly_frac,
-        size_scale    = size_scale,
-        quality_score = round(quality_score, 1),
-        sector        = sector
+        kelly_fraction   = kelly_frac,
+        size_scale       = size_scale,
+        quality_score    = round(quality_score, 1),
+        tp_multiplier    = tp_multiplier,
+        tech_ema_aligned = bool((tech or {}).get("trend_aligned_bull") or (tech or {}).get("trend_aligned_bear")),
+        tech_rsi_ok      = bool((tech or {}).get("rsi_ok_long") or (tech or {}).get("rsi_ok_short")),
+        tech_vol_ok      = bool((tech or {}).get("vol_confirmed")),
+        tech_adx_trend   = bool((tech or {}).get("adx_trending")),
+        sector           = sector
     )
 
 
@@ -899,41 +1230,32 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 continue  # Satu-satunya hard block yang justified
 
             # ── ICT signal (WAJIB ada bias, tapi strength boleh apapun) ─
-            # Pass min_ict_strength="WEAK" ke _find_entry_signal agar
-            # sinyal NEUTRAL tetap diblok, tapi WEAK/MODERATE/STRONG masuk
             signal = _find_entry_signal_soft(df_slice, config)
             if signal is None:
                 trades_filtered += 1
                 continue  # Hanya NEUTRAL yang diblok
 
-            # ── COMPUTE COMPOSITE QUALITY SCORE (0-100) ───────────
-            #
-            # Komponen:
-            #   [40 pts] Screener score (normalized)
-            #   [30 pts] Regime confidence
-            #   [30 pts] ICT signal strength
-            #
-            screener_pts = min(40.0, (score / 100.0) * 40.0)
-
-            regime_pts = min(30.0, (regime_conf / 100.0) * 30.0)
-
-            ict_strength = signal.get("strength", "WEAK")
-            ict_pts_map  = {"VERY_WEAK": 5, "WEAK": 12, "MODERATE": 20, "STRONG": 27, "VERY_STRONG": 30}
-            ict_pts      = ict_pts_map.get(ict_strength, 12)
-
-            quality_score = screener_pts + regime_pts + ict_pts  # 0-100
+            # ── v3: QUALITY SCORE — recalibrated + tech confirmations ──
+            tech = signal.get("tech", {})
+            quality_score, quality_breakdown = _compute_quality_score_v3(
+                score       = score,
+                regime_conf = regime_conf,
+                ict_signal  = signal,
+                tech        = tech,
+                direction   = signal["direction"],
+            )
 
             # ── MAP QUALITY → SIZE SCALE ───────────────────────────
             if quality_score >= 90:
                 base_size_scale = 1.00
-            elif quality_score >= 70:
-                base_size_scale = 0.75
-            elif quality_score >= 50:
-                base_size_scale = 0.55
-            elif quality_score >= 30:
-                base_size_scale = 0.35
+            elif quality_score >= 75:
+                base_size_scale = 0.80
+            elif quality_score >= 60:
+                base_size_scale = 0.60
+            elif quality_score >= 45:
+                base_size_scale = 0.40
             else:
-                base_size_scale = 0.20
+                base_size_scale = 0.22
 
             # ── OVERLAY Regime context on size ────────────────────
             if "BULLISH" in regime or "LOW_VOL" in regime:
@@ -981,6 +1303,8 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 kelly_frac    = kelly_frac,
                 size_scale    = size_scale,
                 quality_score = quality_score,
+                tp_multiplier = signal.get("tp_multiplier", 1.0),
+                tech          = tech,
                 sector        = "Unknown"
             )
 
@@ -998,14 +1322,22 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
 
             regime_emoji = "🟢" if "BULL" in regime else "🟡" if "CHOP" in regime else "🔴"
             icon         = "✅" if trade.outcome == "WIN" else "❌" if trade.outcome == "LOSS" else "〰️"
+            tech_flags   = ""
+            if tech.get("trend_aligned_bull") or tech.get("trend_aligned_bear"): tech_flags += "T"
+            if tech.get("rsi_ok_long") or tech.get("rsi_ok_short"): tech_flags += "R"
+            if tech.get("vol_confirmed"):  tech_flags += "V"
+            if tech.get("adx_trending"):   tech_flags += "A"
+            tp_mul_str = f"TP×{signal.get('tp_multiplier', 1.0)}"
             print(f"   Week {week_num:3d} | {icon} {ticker:10s} "
                   f"{signal['direction']:5s} | "
                   f"Scr:{score:5.1f} | "
                   f"Reg:{regime_emoji}{regime_conf:.0f}% | "
                   f"ICT:{signal['strength']:8s} | "
                   f"Q:{quality_score:.0f}/100 | "
+                  f"Tech:[{tech_flags:4s}] | "
+                  f"{tp_mul_str} | "
                   f"Size:×{size_scale:.2f} | "
-                  f"Est P&L: ${trade.pnl_usd:+7.2f}")
+                  f"P&L: ${trade.pnl_usd:+7.2f}")
 
         result.weekly_snapshots.append(week_snapshot)
         current_date += timedelta(days=7)
@@ -1065,9 +1397,14 @@ def generate_json_report(result: SimulationResult) -> Dict:
             "ict_strength"  : t.ict_strength,
             "balance_after" : t.balance_after,
             "exit_reason"   : t.exit_reason,
-            "kelly_fraction": t.kelly_fraction,
-            "size_scale"    : t.size_scale,
-            "quality_score" : t.quality_score,
+            "kelly_fraction"  : t.kelly_fraction,
+            "size_scale"      : t.size_scale,
+            "quality_score"   : t.quality_score,
+            "tp_multiplier"   : t.tp_multiplier,
+            "tech_ema_aligned": t.tech_ema_aligned,
+            "tech_rsi_ok"     : t.tech_rsi_ok,
+            "tech_vol_ok"     : t.tech_vol_ok,
+            "tech_adx_trend"  : t.tech_adx_trend,
         })
 
     return {

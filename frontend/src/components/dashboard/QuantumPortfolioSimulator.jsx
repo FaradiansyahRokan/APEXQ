@@ -555,7 +555,7 @@ export default function QuantumPortfolioSimulator() {
                 { label: "Win Rate",         value: `${result.summary.win_rate_pct}%`,        color: result.summary.win_rate_pct >= 50 ? "var(--green)" : "var(--red)",  icon: "HIT",  sub: "≥50% ideal" },
                 { label: "Total Trades",     value: result.summary.total_trades,             color: "var(--ink)", icon: "QTY",  sub: `${result.summary.trades_filtered||0} filtered out` },
                 { label: "Calmar Ratio",     value: result.summary.calmar_ratio.toFixed(3),  color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--gold)", icon: "CAL", sub: "≥0.5 ideal" },
-                { label: "Expectancy/Trade", value: `$${result.summary.expectancy_usd.toLocaleString(undefined, {minimumFractionDigits:2})}`, color: isProfit ? "var(--green)" : "var(--red)", icon: "EXP", sub: "avg per trade" },
+                { label: "Expectancy/Trade", value: `$${Number(result.summary.expectancy_usd).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0})}`, color: isProfit ? "var(--green)" : "var(--red)", icon: "EXP", sub: "avg per trade" },
               ].map(({ label, value, color, icon, sub }) => (
                 <MetricCard key={label} label={label} value={value} color={color} icon={icon} sublabel={sub} />
               ))}
@@ -642,25 +642,32 @@ export default function QuantumPortfolioSimulator() {
               </div>
               <div className="card" style={{ overflow: "hidden" }}>
                 <div style={{
-                  display: "grid", gridTemplateColumns: "40px 90px 55px 55px 65px 65px 70px 90px 80px 80px 1fr",
-                  alignItems: 'center', gap: 12, padding: "12px 16px",
+                  display: "grid", gridTemplateColumns: "36px 80px 50px 50px 60px 60px 70px 80px 70px 70px 60px 1fr",
+                  alignItems: 'center', gap: 10, padding: "12px 16px",
                   background: "var(--surface2)", borderBottom: "1px solid var(--border)",
                 }}>
                   <ColHead>#</ColHead><ColHead>TICKER</ColHead><ColHead>SIDE</ColHead>
                   <ColHead>SCORE</ColHead><ColHead>ENTRY</ColHead><ColHead>EXIT</ColHead>
                   <ColHead style={{ textAlign:'right' }}>P&L</ColHead>
                   <ColHead style={{ textAlign:'right' }}>BALANCE</ColHead>
-                  <ColHead>REGIME</ColHead><ColHead>ICT</ColHead><ColHead>KELLY</ColHead>
+                  <ColHead>REGIME</ColHead><ColHead>ICT</ColHead>
+                  <ColHead>TECH</ColHead><ColHead>Q / TP</ColHead>
                 </div>
                 <div style={{ maxHeight: "500px", overflowY: "auto" }}>
                   {filteredTrades.slice().reverse().map((t, i) => {
                     const isWin  = t.outcome === "WIN";
                     const isLoss = t.outcome === "LOSS";
                     const pnlColor = isWin ? "var(--green)" : isLoss ? "var(--red)" : "var(--gold)";
+                    const techFlags = [
+                      t.tech_ema_aligned ? "EMA" : null,
+                      t.tech_rsi_ok      ? "RSI" : null,
+                      t.tech_vol_ok      ? "VOL" : null,
+                      t.tech_adx_trend   ? "ADX" : null,
+                    ].filter(Boolean);
                     return (
                       <div key={t.trade_id} style={{
-                        display: "grid", gridTemplateColumns: "40px 90px 55px 55px 65px 65px 70px 90px 80px 80px 1fr",
-                        alignItems: "center", gap: 12, padding: "12px 16px",
+                        display: "grid", gridTemplateColumns: "36px 80px 50px 50px 60px 60px 70px 80px 70px 70px 60px 1fr",
+                        alignItems: "center", gap: 10, padding: "11px 16px",
                         borderBottom: "1px solid var(--border)",
                         background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)",
                       }}>
@@ -669,7 +676,7 @@ export default function QuantumPortfolioSimulator() {
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
                           color: t.direction === "LONG" ? "var(--blue)" : "var(--amber)" }}>{t.direction}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10,
-                          color: (t.screener_score || 0) >= 75 ? "var(--green)" : "var(--gold)" }}>{t.screener_score ?? "?"}</span>
+                          color: (t.screener_score || 0) >= 80 ? "var(--green)" : "var(--gold)" }}>{t.screener_score ?? "?"}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: "var(--ink)" }}>{t.entry_date?.slice(5)}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: "var(--ink)" }}>{t.exit_date?.slice(5)}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: pnlColor, fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -680,9 +687,27 @@ export default function QuantumPortfolioSimulator() {
                         </span>
                         <div><RegimeBadge regime={t.regime} /></div>
                         <div><IctBadge strength={t.ict_strength} /></div>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)' }}>
-                          {t.kelly_fraction ? `${(t.kelly_fraction * 100).toFixed(0)}%K` : '—'}
-                          {t.size_scale && t.size_scale !== 1 ? ` ×${t.size_scale}` : ''}
+                        {/* Tech flags */}
+                        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                          {["EMA","RSI","VOL","ADX"].map(flag => {
+                            const active = techFlags.includes(flag);
+                            return (
+                              <span key={flag} style={{
+                                fontFamily: 'var(--mono)', fontSize: 6, fontWeight: 700,
+                                color: active ? '#000' : 'var(--ink3)',
+                                background: active ? 'var(--gold)' : 'transparent',
+                                border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+                                padding: '1px 3px', borderRadius: 2,
+                              }}>{flag}</span>
+                            );
+                          })}
+                        </div>
+                        {/* Quality + TP mult */}
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)' }}>
+                          <span style={{ color: (t.quality_score||0) >= 80 ? 'var(--green)' : (t.quality_score||0) >= 60 ? 'var(--gold)' : 'var(--red)', fontWeight: 700 }}>
+                            {t.quality_score?.toFixed(0) || '?'}
+                          </span>
+                          {t.tp_multiplier && t.tp_multiplier !== 1 ? <span style={{ color: 'var(--purple)', marginLeft: 4 }}>×{t.tp_multiplier}TP</span> : ''}
                         </span>
                       </div>
                     );
@@ -703,7 +728,7 @@ export default function QuantumPortfolioSimulator() {
                   { label: "Average Loss",    value: `${result.summary.avg_loss_pct}%`,    color: "var(--red)" },
                   { label: "Win Rate",        value: `${result.summary.win_rate_pct}%`,    color: "var(--blue)" },
                   { label: "Profit Factor",   value: result.summary.profit_factor.toFixed(3), color: result.summary.profit_factor > 1.5 ? "var(--green)" : "var(--gold)" },
-                  { label: "Expectancy/Trade",value: `$${result.summary.expectancy_usd.toLocaleString(undefined, {minimumFractionDigits:2})}`, color: isProfit ? "var(--green)" : "var(--red)" },
+                  { label: "Expectancy/Trade",value: `$${Number(result.summary.expectancy_usd).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0})}`, color: isProfit ? "var(--green)" : "var(--red)" },
                   { label: "Kelly Avg Frac",  value: `${(result.summary.kelly_avg_fraction*100).toFixed(1)}%K`, color: "var(--gold)" },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid var(--border)" }}>
@@ -729,6 +754,44 @@ export default function QuantumPortfolioSimulator() {
                     <span style={{ fontFamily: 'var(--mono)', fontSize: "14px", fontWeight: 700, color }}>{value}</span>
                   </div>
                 ))}
+              </div>
+
+              {/* Dynamic TP Attribution */}
+              <div className="card" style={{ gridColumn: "1 / -1", background: 'var(--surface2)', padding: "24px" }}>
+                <SectionTitle>Dynamic TP Multiplier Attribution</SectionTitle>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {[1.5, 1.0].map(mult => {
+                    const label = mult === 1.5 ? "3R — Strong Trend" : "2R — Normal / Default";
+                    const emoji = mult === 1.5 ? "🚀" : "📊";
+                    const trades = result.trades.filter(t => Math.abs((t.tp_multiplier||1.0) - mult) < 0.05);
+                    if (!trades.length) return (
+                      <div key={mult} style={{ flex: 1, minWidth: 140, padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderLeft: `3px solid var(--border)`, opacity: 0.5 }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase' }}>{emoji} {label}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 800, color: 'var(--ink2)', marginTop: 8 }}>0</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink3)', marginTop: 4 }}>No trades — needs ADX≥25 + EMA aligned + momentum</div>
+                      </div>
+                    );
+                    const wr  = (trades.filter(t=>t.outcome==="WIN").length/trades.length*100).toFixed(0);
+                    const pnl = trades.reduce((a,t)=>a+t.pnl_usd,0);
+                    const col = mult === 1.5 ? 'var(--green)' : 'var(--gold)';
+                    return (
+                      <div key={mult} style={{ flex: 1, minWidth: 140, padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderLeft: `3px solid ${col}` }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: col, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>{emoji} {label}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>{trades.length}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginTop: 2 }}>trades</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: +wr>=50?'var(--green)':'var(--red)', fontWeight: 700 }}>{wr}% WR</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: pnl>=0?'var(--green)':'var(--red)' }}>{pnl>=0?'+':''}${Number(pnl).toLocaleString("en-US",{maximumFractionDigits:0})}</span>
+                        </div>
+                        {mult === 1.5 && (
+                          <div style={{ fontFamily:'var(--mono)', fontSize:7, color:'var(--ink3)', marginTop:6, lineHeight:1.4 }}>
+                            Aktif: ADX≥25 + EMA aligned + momentum
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Regime Attribution */}
@@ -826,9 +889,53 @@ export default function QuantumPortfolioSimulator() {
                 </div>
               </div>
 
-              {/* ICT Strength Distribution */}
+              {/* Tech Confirmation Stats */}
+              <div className="card" style={{ gridColumn: "1 / -1", background: 'var(--surface2)', padding: "24px" }}>
+                <SectionTitle>v3 Technical Confirmation — Win Rate Impact</SectionTitle>
+                <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)', marginBottom: 16, lineHeight: 1.6 }}>
+                  Apakah konfirmasi teknikal benar-benar meningkatkan win rate? Data dari seluruh trade.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  {[
+                    { key: "tech_ema_aligned", label: "EMA Aligned", desc: "Price > EMA20 > EMA50 (bull) atau sebaliknya (bear)" },
+                    { key: "tech_rsi_ok",      label: "RSI Optimal", desc: "RSI 35-72 (long) atau 28-65 (short)" },
+                    { key: "tech_vol_ok",      label: "Vol Confirmed", desc: "Volume ≥ 0.9× 20-day average" },
+                    { key: "tech_adx_trend",   label: "ADX Trending", desc: "ADX ≥ 20 (trending market)" },
+                  ].map(({ key, label, desc }) => {
+                    const withFlag    = result.trades.filter(t => t[key]);
+                    const withoutFlag = result.trades.filter(t => !t[key]);
+                    const wrWith    = withFlag.length    ? (withFlag.filter(t=>t.outcome==="WIN").length/withFlag.length*100)    : 0;
+                    const wrWithout = withoutFlag.length ? (withoutFlag.filter(t=>t.outcome==="WIN").length/withoutFlag.length*100) : 0;
+                    const pnlWith    = withFlag.reduce((a,t)=>a+t.pnl_usd,0);
+                    const pnlWithout = withoutFlag.reduce((a,t)=>a+t.pnl_usd,0);
+                    const impact = wrWith - wrWithout;
+                    const color  = impact > 0 ? 'var(--green)' : impact < -2 ? 'var(--red)' : 'var(--gold)';
+                    return (
+                      <div key={key} style={{ padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderTop: `3px solid ${color}` }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, textTransform: 'uppercase' }}>{label}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink2)', marginBottom: 12, lineHeight: 1.5 }}>{desc}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginBottom: 2 }}>WITH flag ({withFlag.length})</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 800, color: wrWith >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWith.toFixed(0)}%</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: pnlWith>=0?'var(--green)':'var(--red)' }}>{pnlWith>=0?'+':''}${pnlWith.toFixed(0)}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginBottom: 2 }}>WITHOUT ({withoutFlag.length})</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 800, color: wrWithout >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWithout.toFixed(0)}%</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: pnlWithout>=0?'var(--green)':'var(--red)' }}>{pnlWithout>=0?'+':''}${pnlWithout.toFixed(0)}</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 10, color, fontWeight: 700 }}>
+                          {impact >= 0 ? '+' : ''}{impact.toFixed(1)}% impact
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="card" style={{ background: 'var(--surface2)', padding: "24px" }}>
-                <SectionTitle>ICT Strength Distribution</SectionTitle>
+                <SectionTitle>ICT Strength Impact</SectionTitle>
                 {["VERY_STRONG","STRONG","MODERATE","WEAK","VERY_WEAK"].map(s => {
                   const trades = result.trades.filter(t => t.ict_strength === s);
                   if (!trades.length) return null;
@@ -882,6 +989,7 @@ export default function QuantumPortfolioSimulator() {
                 </div>
               </div>
             </div>
+
           )}
         </div>
       )}
