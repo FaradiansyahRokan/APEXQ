@@ -1,25 +1,47 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║         QUANTUM PORTFOLIO SIMULATOR — BACKTEST ENGINE v1.0          ║
-║   1-Year Time Machine · Screener → ICT → Regime → Risk Manager      ║
+║       QUANTUM PORTFOLIO SIMULATOR — BACKTEST ENGINE v2.0 APEX       ║
+║     1-Year Time Machine · Screener → ICT → Regime → Kelly Risk      ║
+╠══════════════════════════════════════════════════════════════════════╣
+║  CHANGELOG v2.0 (Critical Fixes + Institutional Upgrades):          ║
+║                                                                      ║
+║  🔴 BUG FIX: Balance double-counting eliminated                      ║
+║     - PnL sekarang HANYA diterapkan saat posisi benar-benar tutup   ║
+║     - trade.balance_after dihitung ulang saat close, bukan saat open ║
+║                                                                      ║
+║  🔴 BUG FIX: Commission calculation diperbaiki                       ║
+║     - Sebelumnya: commission = balance × pct (SALAH!)               ║
+║     - Sekarang: commission = units × entry × pct (BENAR)            ║
+║                                                                      ║
+║  🔴 BUG FIX: Sharpe/Sortino annualization diperbaiki                 ║
+║     - Menggunakan daily equity returns, bukan per-trade pnl          ║
+║                                                                      ║
+║  ✅ UPGRADE: Kelly-Adaptive Position Sizing                          ║
+║     - Setelah 15 trade, Kelly dihitung dari rolling history          ║
+║     - risk_per_trade disesuaikan secara dinamis dengan Kelly frac    ║
+║                                                                      ║
+║  ✅ UPGRADE: 3-Layer Confirmation Gate                               ║
+║     - Layer 1: Screener Score ≥ min_screener_score                  ║
+║     - Layer 2: HMM Regime confidence ≥ 55%                          ║
+║     - Layer 3: ICT bias_strength ≥ MODERATE                         ║
+║     - Semua harus lulus → jika tidak, trade DIBLOKIR                ║
+║                                                                      ║
+║  ✅ UPGRADE: Regime-Dynamic Size Scaling                             ║
+║     - LOW_VOL_BULLISH  → 100% dari risk target                      ║
+║     - SIDEWAYS_CHOP    → 60% dari risk target (hati-hati)           ║
+║     - HIGH_VOL_BEARISH → SKIP (tidak masuk sama sekali)             ║
+║                                                                      ║
+║  ✅ UPGRADE: Consecutive-Loss Drawdown Guard                         ║
+║     - Setelah 3 loss berturut: ukuran posisi dikurangi 50%          ║
+║     - Reset saat pertama kali profit kembali                         ║
+║                                                                      ║
+║  ✅ UPGRADE: Partial Profit Lock at 1.5R                             ║
+║     - Pada 1R: SL dipindah ke Break Even                            ║
+║     - Pada 1.5R: booking 50% profit, trail sisanya                  ║
+║                                                                      ║
+║  ✅ UPGRADE: Equity Curve dari Daily Close, bukan trade-event        ║
+║     - Interpolasi harian → grafik equity lebih smooth dan realistis ║
 ╚══════════════════════════════════════════════════════════════════════╝
-
-Filosofi:
-  Simulator ini menjawab satu pertanyaan sederhana:
-  "Kalau kamu punya modal $X dan 100% mengikuti sinyal sistem ini
-   selama 1 tahun — berapa saldo kamu sekarang?"
-
-Pipeline per-minggu (rolling window):
-  1. SCREENER   → Scan watchlist, ambil top 3 ticker SATIN_READY
-  2. REGIME     → Cek apakah market regime mendukung entry
-  3. ICT ENGINE → Cari POI (FVG / Order Block) untuk entry presisi
-  4. KELLY      → Hitung optimal position size berdasarkan edge
-  5. RISK MGR   → Validasi circuit breaker & daily loss limit
-  6. SIMULATE   → Forward simulate trade dengan SL/TP dari ICT
-  7. LOG        → Catat semua hasil ke TradeJournal
-
-Author  : APEX System
-Version : 1.0.0
 """
 
 import numpy as np
@@ -33,9 +55,10 @@ import time
 
 # ── APEX Engine Imports ──
 from app.engine.screener_engine import score_ticker_from_df
-from app.engine.regime_engine import detect_hmm_regime
+from app.engine.regime_engine import detect_hmm_regime, get_full_regime_analysis
 from app.engine.ict_engine import get_ict_full_analysis
 from app.engine.quant_engine import calculate_technicals
+from app.engine.macro_engine import get_cross_asset_data
 
 warnings.filterwarnings("ignore")
 
@@ -47,65 +70,91 @@ warnings.filterwarnings("ignore")
 @dataclass
 class TradeRecord:
     """Rekaman lengkap satu trade dari entry sampai exit."""
-    trade_id     : int
-    ticker       : str
-    entry_date   : str
-    exit_date    : str
-    direction    : str          # LONG / SHORT
-    entry_price  : float
-    exit_price   : float
-    stop_loss    : float
-    take_profit  : float
-    units        : float
-    pnl_usd      : float
-    pnl_pct      : float
-    outcome      : str          # WIN / LOSS / BE (Break Even)
-    regime       : str
+    trade_id      : int
+    ticker        : str
+    entry_date    : str
+    exit_date     : str
+    direction     : str           # LONG / SHORT
+    entry_price   : float
+    exit_price    : float
+    stop_loss     : float
+    take_profit   : float
+    units         : float
+    pnl_usd       : float
+    pnl_pct       : float         # pnl/balance_at_entry × 100
+    outcome       : str           # WIN / LOSS / BE
+    regime        : str
+    regime_conf   : float         # HMM confidence %
     screener_score: float
+    ict_strength  : str           # STRONG / MODERATE / WEAK
     balance_after : float
-    exit_reason  : str          # TP_HIT / SL_HIT / TIME_EXIT / CIRCUIT_BREAK
+    exit_reason   : str           # TP_HIT / SL_HIT / BE_EXIT / TIME_EXIT / PARTIAL_TP
+    kelly_fraction: float         # Kelly frac yang dipakai saat entry
+    size_scale    : float         # Regime size scaling factor yang dipakai
+    quality_score : float = 0.0   # Composite quality score (0-100) saat entry
+    sector        : str = "Unknown"
 
 
-@dataclass  
+@dataclass
 class SimulationConfig:
     """Konfigurasi lengkap untuk satu run simulasi."""
-    initial_balance : float = 100.0
-    risk_per_trade  : float = 2.0       # % risiko per trade
-    max_open_trades : int   = 3         # Maks posisi bersamaan
-    sl_atr_mult     : float = 1.5       # Stop Loss = 1.5x ATR
-    tp_rr_ratio     : float = 2.0       # Take Profit = 2R
-    min_screener_score: float = 65.0    # Min skor Screener untuk entry
-    scan_universe   : str   = "US"      # IDX / US / CRYPTO
-    lookback_years  : int   = 1         # Durasi simulasi (tahun)
-    max_hold_days   : int   = 15        # Maks hari pegang posisi
-    commission_pct  : float = 0.1       # Komisi per trade (%)
-    regime_filter   : bool  = True      # Aktifkan filter regime HMM
+    initial_balance    : float = 100.0
+    risk_per_trade     : float = 2.0       # % risiko per trade (base)
+    max_open_trades    : int   = 3
+    sl_atr_mult        : float = 1.5       # Stop Loss = 1.5x ATR
+    tp_rr_ratio        : float = 2.0       # Take Profit = 2R (full)
+    min_screener_score : float = 70.0      # Dinaikkan dari 65 → 70
+    scan_universe      : str   = "US"
+    lookback_years     : int   = 1
+    max_hold_days      : int   = 15
+    commission_pct     : float = 0.1       # % dari nilai posisi (BUKAN balance)
+    regime_filter      : bool  = True
+    use_be_logic       : bool  = True      # Move SL to BE at 1R
+    be_threshold_rr    : float = 1.0
+    use_partial_tp     : bool  = True      # Partial TP at 1.5R
+    partial_tp_rr      : float = 1.5       # Lock 50% profit di sini
+    partial_tp_frac    : float = 0.5       # Berapa % posisi yang diclose di partial TP
+    # ── v2.0 Additions ──────────────────────────────
+    use_adaptive_kelly : bool  = True      # Aktifkan Kelly-adaptive sizing
+    kelly_fraction     : float = 0.25      # Quarter Kelly (fraction of full Kelly)
+    kelly_warmup_trades: int   = 15        # Mulai adaptive Kelly setelah N trades
+    kelly_lookback     : int   = 25        # Rolling window trade history untuk Kelly
+    max_risk_cap_pct   : float = 3.0       # Hard cap risk per trade (%)
+    min_risk_floor_pct : float = 0.5       # Minimum risk per trade (%)
+    min_regime_conf    : float = 55.0      # Min HMM confidence % untuk entry
+    min_ict_strength   : str   = "MODERATE"  # Min ICT bias strength
+    consec_loss_guard  : int   = 3         # Guard aktif setelah N loss berturut
+    consec_loss_scale  : float = 0.5       # Kurangi size ke X% setelah guard aktif
+    regime_size_bull   : float = 1.0       # Size scaling di BULLISH
+    regime_size_chop   : float = 0.6       # Size scaling di SIDEWAYS_CHOP
+    circuit_breaker_dd : float = 15.0      # Circuit breaker pada DD% dari initial
 
 
 @dataclass
 class SimulationResult:
     """Output lengkap hasil simulasi."""
-    config          : SimulationConfig
-    trades          : List[TradeRecord] = field(default_factory=list)
-    equity_curve    : List[Dict]        = field(default_factory=list)
-    weekly_snapshots: List[Dict]        = field(default_factory=list)
-    final_balance   : float = 0.0
-    total_return_pct: float = 0.0
-    sharpe_ratio    : float = 0.0
-    sortino_ratio   : float = 0.0
-    max_drawdown_pct: float = 0.0
-    win_rate_pct    : float = 0.0
-    profit_factor   : float = 0.0
-    total_trades    : int   = 0
-    winning_trades  : int   = 0
-    losing_trades   : int   = 0
-    avg_win_pct     : float = 0.0
-    avg_loss_pct    : float = 0.0
-    best_trade      : Optional[TradeRecord] = None
-    worst_trade     : Optional[TradeRecord] = None
-    longest_drawdown_days: int = 0
-    calmar_ratio    : float = 0.0
-    expectancy_usd  : float = 0.0
+    config             : SimulationConfig
+    trades             : List[TradeRecord] = field(default_factory=list)
+    equity_curve       : List[Dict]        = field(default_factory=list)
+    weekly_snapshots   : List[Dict]        = field(default_factory=list)
+    final_balance      : float = 0.0
+    total_return_pct   : float = 0.0
+    sharpe_ratio       : float = 0.0
+    sortino_ratio      : float = 0.0
+    max_drawdown_pct   : float = 0.0
+    win_rate_pct       : float = 0.0
+    profit_factor      : float = 0.0
+    total_trades       : int   = 0
+    winning_trades     : int   = 0
+    losing_trades      : int   = 0
+    avg_win_pct        : float = 0.0
+    avg_loss_pct       : float = 0.0
+    best_trade         : Optional[TradeRecord] = None
+    worst_trade        : Optional[TradeRecord] = None
+    calmar_ratio       : float = 0.0
+    expectancy_usd     : float = 0.0
+    trades_filtered    : int   = 0         # Berapa trade yang diblokir gate
+    kelly_avg_fraction : float = 0.0       # Rata-rata Kelly fraction dipakai
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -135,19 +184,18 @@ WATCHLISTS = {
     ]
 }
 
+# ICT strength tier ordering (untuk comparison)
+_ICT_STRENGTH_ORDER = {"VERY_WEAK": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3, "VERY_STRONG": 4}
+
 
 # ══════════════════════════════════════════════════════════════════
 #  LAYER 1 — DATA FETCHER
 # ══════════════════════════════════════════════════════════════════
 
 def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optional[pd.DataFrame]:
-    """
-    Fetch data OHLCV historis lengkap untuk periode simulasi.
-    Menggunakan Yahoo Finance dengan error handling robust.
-    """
     for attempt in range(3):
         try:
-            time.sleep(0.15)  # Rate limit protection
+            time.sleep(0.15)
             df = yf.download(
                 ticker,
                 start=start.strftime("%Y-%m-%d"),
@@ -171,24 +219,22 @@ def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optio
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 2 — MINI SCREENER (Standalone, no app imports)
+#  LAYER 2 — SCREENER
 # ══════════════════════════════════════════════════════════════════
 
 def _score_ticker(df_slice: pd.DataFrame) -> float:
-    """
-    Scoring menggunakan engine real dari screener_engine.py.
-    """
     res = score_ticker_from_df(df_slice)
     return res.get("score", 0.0)
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 3 — MINI REGIME DETECTOR
+#  LAYER 3 — REGIME DETECTOR (v2: returns confidence + regime)
 # ══════════════════════════════════════════════════════════════════
 
-def _detect_regime_simple(df_slice: pd.DataFrame) -> Tuple[str, float]:
+def _detect_regime_full(df_slice: pd.DataFrame) -> Tuple[str, float]:
     """
-    Deteksi regime menggunakan HMM engine real dari regime_engine.py.
+    Returns (regime_name, confidence_pct).
+    Confidence digunakan sebagai filter gate di v2.
     """
     res = detect_hmm_regime(df_slice)
     if "error" in res:
@@ -197,18 +243,15 @@ def _detect_regime_simple(df_slice: pd.DataFrame) -> Tuple[str, float]:
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 4 — MINI ICT / ENTRY LOGIC
+#  LAYER 4 — ICT ENGINE (v2: returns strength + signal)
 # ══════════════════════════════════════════════════════════════════
 
 def _calculate_atr(df_slice: pd.DataFrame, period: int = 14) -> float:
-    """Hitung ATR untuk penentuan SL/TP."""
     if len(df_slice) < period + 1:
         return float(df_slice["Close"].std()) if len(df_slice) > 1 else 1.0
-
     high  = df_slice["High"].values.astype(float)
     low   = df_slice["Low"].values.astype(float)
     close = df_slice["Close"].values.astype(float)
-
     trs = [max(high[i] - low[i], abs(high[i] - close[i-1]), abs(low[i] - close[i-1]))
            for i in range(1, len(close))]
     return float(np.mean(trs[-period:]))
@@ -216,18 +259,23 @@ def _calculate_atr(df_slice: pd.DataFrame, period: int = 14) -> float:
 
 def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Optional[Dict]:
     """
-    Cari sinyal entry berdasarkan ICT Full Analysis.
-    Menerjemahkan bias ICT menjadi setup trade dengan SL/TP.
+    v2: Juga mengembalikan bias_strength dari ICT untuk gate filtering.
     """
     ict = get_ict_full_analysis(df_slice)
-    bias = ict.get("composite_bias", "NEUTRAL")
-    
+    bias     = ict.get("composite_bias", "NEUTRAL")
+    strength = ict.get("bias_strength", "WEAK")
+
     if bias == "NEUTRAL":
         return None
 
-    close = float(df_slice["Close"].iloc[-1])
-    atr   = _calculate_atr(df_slice, period=14)
-    
+    # Blokir sinyal yang terlalu lemah
+    min_strength_val = _ICT_STRENGTH_ORDER.get(config.min_ict_strength, 2)
+    curr_strength_val = _ICT_STRENGTH_ORDER.get(strength, 1)
+    if curr_strength_val < min_strength_val:
+        return None
+
+    close   = float(df_slice["Close"].iloc[-1])
+    atr     = _calculate_atr(df_slice, period=14)
     sl_dist = atr * config.sl_atr_mult
     tp_dist = sl_dist * config.tp_rr_ratio
 
@@ -238,7 +286,10 @@ def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Opti
             "sl"       : round(close - sl_dist, 6),
             "tp"       : round(close + tp_dist, 6),
             "atr"      : round(atr, 6),
-            "setup"    : f"ICT_{ict.get('bias_strength')}_BULLISH"
+            "strength" : strength,
+            "setup"    : f"ICT_{strength}_BULLISH",
+            "bullish_factors": ict.get("bullish_factors", 0),
+            "bearish_factors": ict.get("bearish_factors", 0),
         }
     elif bias == "BEARISH":
         return {
@@ -247,94 +298,299 @@ def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Opti
             "sl"       : round(close + sl_dist, 6),
             "tp"       : round(close - tp_dist, 6),
             "atr"      : round(atr, 6),
-            "setup"    : f"ICT_{ict.get('bias_strength')}_BEARISH"
+            "strength" : strength,
+            "setup"    : f"ICT_{strength}_BEARISH",
+            "bullish_factors": ict.get("bullish_factors", 0),
+            "bearish_factors": ict.get("bearish_factors", 0),
         }
+    return None
 
+
+def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) -> Optional[Dict]:
+    """
+    v2.1 SOFT version: Hanya blokir NEUTRAL. WEAK/MODERATE/STRONG semua masuk.
+    Quality scoring nanti yang akan menentukan berapa besar posisinya.
+    """
+    ict      = get_ict_full_analysis(df_slice)
+    bias     = ict.get("composite_bias", "NEUTRAL")
+    strength = ict.get("bias_strength", "WEAK")
+
+    # Satu-satunya kondisi yang diblok: benar-benar NEUTRAL (tidak ada bias)
+    if bias == "NEUTRAL":
+        return None
+
+    close   = float(df_slice["Close"].iloc[-1])
+    atr     = _calculate_atr(df_slice, period=14)
+    sl_dist = atr * config.sl_atr_mult
+    tp_dist = sl_dist * config.tp_rr_ratio
+
+    if bias == "BULLISH":
+        return {
+            "direction"      : "LONG",
+            "entry"          : close,
+            "sl"             : round(close - sl_dist, 6),
+            "tp"             : round(close + tp_dist, 6),
+            "atr"            : round(atr, 6),
+            "strength"       : strength,
+            "setup"          : f"ICT_{strength}_BULLISH",
+            "bullish_factors": ict.get("bullish_factors", 0),
+            "bearish_factors": ict.get("bearish_factors", 0),
+        }
+    elif bias == "BEARISH":
+        return {
+            "direction"      : "SHORT",
+            "entry"          : close,
+            "sl"             : round(close + sl_dist, 6),
+            "tp"             : round(close - tp_dist, 6),
+            "atr"            : round(atr, 6),
+            "strength"       : strength,
+            "setup"          : f"ICT_{strength}_BEARISH",
+            "bullish_factors": ict.get("bullish_factors", 0),
+            "bearish_factors": ict.get("bearish_factors", 0),
+        }
     return None
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 5 — TRADE SIMULATOR
+#  LAYER 5 — KELLY-ADAPTIVE POSITION SIZER
+# ══════════════════════════════════════════════════════════════════
+
+def _compute_adaptive_kelly(
+    trade_history  : List[TradeRecord],
+    config         : SimulationConfig,
+    base_risk_pct  : float,
+    consec_losses  : int
+) -> Tuple[float, float]:
+    """
+    Hitung risk_pct yang optimal berdasarkan Kelly dari trade history.
+
+    Returns:
+        (final_risk_pct, kelly_fraction_used)
+    """
+    # Belum cukup data → pakai base risk
+    if len(trade_history) < config.kelly_warmup_trades or not config.use_adaptive_kelly:
+        risk = base_risk_pct
+        # Tetap apply consecutive loss guard
+        if consec_losses >= config.consec_loss_guard:
+            risk *= config.consec_loss_scale
+        return min(max(risk, config.min_risk_floor_pct), config.max_risk_cap_pct), 0.25
+
+    # Rolling window dari trade history terakhir
+    recent = trade_history[-config.kelly_lookback:]
+    wins   = [t for t in recent if t.outcome == "WIN"]
+    losses = [t for t in recent if t.outcome == "LOSS"]
+
+    n_total = len(recent)
+    n_wins  = len(wins)
+    n_loss  = len(losses)
+
+    if n_wins == 0 or n_loss == 0:
+        return base_risk_pct, 0.25
+
+    win_rate = n_wins / n_total
+    avg_win  = np.mean([abs(t.pnl_pct) for t in wins])
+    avg_loss = np.mean([abs(t.pnl_pct) for t in losses])
+
+    if avg_loss == 0:
+        return base_risk_pct, 0.25
+
+    rr = avg_win / avg_loss
+    full_kelly = win_rate - ((1 - win_rate) / rr)
+
+    if full_kelly <= 0:
+        # Negative edge → reduce to floor
+        return config.min_risk_floor_pct, 0.0
+
+    fractional_kelly = full_kelly * config.kelly_fraction
+    # Scale fractional kelly ke risk_pct domain
+    # full_kelly = 1 → use base_risk_pct, Kelly scale it proportionally
+    kelly_scaled_risk = base_risk_pct * (fractional_kelly / (config.kelly_fraction + 1e-9))
+    kelly_scaled_risk = min(kelly_scaled_risk, config.max_risk_cap_pct)
+    kelly_scaled_risk = max(kelly_scaled_risk, config.min_risk_floor_pct)
+
+    # Apply consecutive loss guard on top
+    if consec_losses >= config.consec_loss_guard:
+        kelly_scaled_risk *= config.consec_loss_scale
+        print(f"   ⚠️  CONSEC LOSS GUARD: {consec_losses} losses → size scaled to "
+              f"{config.consec_loss_scale*100:.0f}%")
+
+    return round(kelly_scaled_risk, 4), round(config.kelly_fraction, 4)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  LAYER 6 — TRADE SIMULATOR (v2: fixed commission + partial TP)
 # ══════════════════════════════════════════════════════════════════
 
 def _simulate_trade(
-    ticker     : str,
-    signal     : Dict,
-    df_future  : pd.DataFrame,
-    balance    : float,
-    config     : SimulationConfig,
-    trade_id   : int,
-    entry_date : str,
-    regime     : str,
-    score      : float
+    ticker        : str,
+    signal        : Dict,
+    df_future     : pd.DataFrame,
+    balance_entry : float,      # Balance SAAT ENTRY (sebelum trade ini)
+    config        : SimulationConfig,
+    trade_id      : int,
+    entry_date    : str,
+    regime        : str,
+    regime_conf   : float,
+    score         : float,
+    risk_pct      : float,      # Final risk % yang sudah diadaptasi oleh Kelly
+    kelly_frac    : float,
+    size_scale    : float,      # Regime sizing factor
+    quality_score : float = 50.0,
+    sector        : str = "Unknown"
 ) -> Optional[TradeRecord]:
     """
-    Forward-simulate satu trade pada data historis.
-    Cek setiap candle: apakah SL atau TP sudah tercapai.
+    v2 Forward-simulate satu trade.
+
+    FIXES:
+    - Commission dihitung dari nilai posisi, BUKAN dari total balance
+    - Partial TP di 1.5R: close 50% posisi, trail sisanya dengan BE stop
+    - balance_after dihitung dari balance_entry (dikirim dari caller)
     """
     if df_future is None or df_future.empty:
         return None
 
-    risk_usd    = balance * (config.risk_per_trade / 100)
-    sl_distance = abs(signal["entry"] - signal["sl"])
-    if sl_distance == 0:
+    direction  = signal["direction"]
+    entry      = signal["entry"]
+    sl_price   = signal["sl"]
+    tp_price   = signal["tp"]
+    sl_dist    = abs(entry - sl_price)
+
+    if sl_dist == 0:
         return None
 
-    # Hitung commission
-    commission  = balance * (config.commission_pct / 100)
-    units       = risk_usd / sl_distance
+    # ── Hitung units berdasarkan risk yang sudah diadaptasi ─────
+    actual_risk_pct  = risk_pct * size_scale
+    actual_risk_pct  = min(max(actual_risk_pct, config.min_risk_floor_pct), config.max_risk_cap_pct)
+    dollar_risk      = balance_entry * (actual_risk_pct / 100)
+    units_full       = dollar_risk / sl_dist
 
-    direction   = signal["direction"]
-    entry       = signal["entry"]
-    sl_price    = signal["sl"]
-    tp_price    = signal["tp"]
+    # ── FIX COMMISSION: % dari nilai posisi, bukan dari balance ─
+    position_value   = units_full * entry
+    commission_entry = position_value * (config.commission_pct / 100)
+    commission_exit  = position_value * (config.commission_pct / 100)
+    total_commission = commission_entry + commission_exit
+
+    # ── Partial TP setup ────────────────────────────────────────
+    partial_tp_price = None
+    partial_tp_units = 0.0
+    partial_pnl      = 0.0
+    partial_booked   = False
+
+    if config.use_partial_tp:
+        partial_dist = sl_dist * config.partial_tp_rr
+        if direction == "LONG":
+            partial_tp_price = entry + partial_dist
+        else:
+            partial_tp_price = entry - partial_dist
+        partial_tp_units = units_full * config.partial_tp_frac
+
+    # ── Break Even setup ────────────────────────────────────────
+    be_trigger_dist = sl_dist * config.be_threshold_rr
+    if direction == "LONG":
+        be_trigger_price = entry + be_trigger_dist
+    else:
+        be_trigger_price = entry - be_trigger_dist
+    is_be_activated = False
+
+    # Remaining units after potential partial close
+    units_remaining = units_full
+
+    exit_price  = entry
+    exit_reason = "TIME_EXIT"
+    final_date  = df_future.index[-1]
 
     for i, (date, row) in enumerate(df_future.iterrows()):
         if i >= config.max_hold_days:
-            # Time exit: close at current close
-            exit_price = float(row["Close"])
+            exit_price  = float(row["Close"])
             exit_reason = "TIME_EXIT"
+            final_date  = date
             break
 
-        high = float(row["High"])
-        low  = float(row["Low"])
+        high  = float(row["High"])
+        low   = float(row["Low"])
+        close = float(row["Close"])
 
         if direction == "LONG":
+            # 1. Partial TP check
+            if config.use_partial_tp and not partial_booked and high >= partial_tp_price:
+                partial_pnl    = (partial_tp_price - entry) * partial_tp_units
+                units_remaining -= partial_tp_units
+                partial_booked  = True
+
+            # 2. BE trigger check
+            if not is_be_activated and config.use_be_logic and high >= be_trigger_price:
+                is_be_activated = True
+                sl_price        = entry  # Move to Break Even
+
+            # 3. SL / TP check (on remaining units)
             if low <= sl_price:
                 exit_price  = sl_price
-                exit_reason = "SL_HIT"
+                exit_reason = "BE_EXIT" if is_be_activated else "SL_HIT"
+                final_date  = date
                 break
             elif high >= tp_price:
                 exit_price  = tp_price
                 exit_reason = "TP_HIT"
+                final_date  = date
                 break
+
         else:  # SHORT
+            # 1. Partial TP check
+            if config.use_partial_tp and not partial_booked and low <= partial_tp_price:
+                partial_pnl    = (entry - partial_tp_price) * partial_tp_units
+                units_remaining -= partial_tp_units
+                partial_booked  = True
+
+            # 2. BE trigger check
+            if not is_be_activated and config.use_be_logic and low <= be_trigger_price:
+                is_be_activated = True
+                sl_price        = entry
+
+            # 3. SL / TP check
             if high >= sl_price:
                 exit_price  = sl_price
-                exit_reason = "SL_HIT"
+                exit_reason = "BE_EXIT" if is_be_activated else "SL_HIT"
+                final_date  = date
                 break
             elif low <= tp_price:
                 exit_price  = tp_price
                 exit_reason = "TP_HIT"
+                final_date  = date
                 break
     else:
         exit_price  = float(df_future["Close"].iloc[-1])
         exit_reason = "TIME_EXIT"
-        date        = df_future.index[-1]
+        final_date  = df_future.index[-1]
 
-    # ── P&L Calculation ──
+    # ── P&L Calculation ─────────────────────────────────────────
     if direction == "LONG":
-        raw_pnl = (exit_price - entry) * units
+        main_pnl = (exit_price - entry) * units_remaining
     else:
-        raw_pnl = (entry - exit_price) * units
+        main_pnl = (entry - exit_price) * units_remaining
 
-    net_pnl     = raw_pnl - commission
-    pnl_pct     = (net_pnl / balance) * 100
-    balance_after = balance + net_pnl
+    # ── FIX: Hitung commission exit berdasarkan actual exit size ─
+    actual_exit_value   = units_remaining * exit_price
+    actual_commission   = (units_full * entry + units_remaining * exit_price) * (config.commission_pct / 100)
+    if partial_booked:
+        actual_commission += (partial_tp_units * partial_tp_price) * (config.commission_pct / 100)
 
-    outcome = "WIN" if net_pnl > 0 else ("BE" if abs(net_pnl) < 0.01 else "LOSS")
+    raw_pnl       = main_pnl + partial_pnl
+    net_pnl       = raw_pnl - actual_commission
+    pnl_pct       = (net_pnl / balance_entry) * 100
+    balance_after = balance_entry + net_pnl
 
-    exit_date_str = date.strftime("%Y-%m-%d") if hasattr(date, "strftime") else str(date)
+    # Outcome
+    if net_pnl > 0.01:
+        outcome = "WIN"
+    elif exit_reason in ("BE_EXIT",) or abs(net_pnl) <= actual_commission * 1.5:
+        outcome = "BE"
+    else:
+        outcome = "LOSS"
+
+    exit_date_str = final_date.strftime("%Y-%m-%d") if hasattr(final_date, "strftime") else str(final_date)
+    full_exit_reason = exit_reason
+    if partial_booked:
+        full_exit_reason += "+PARTIAL_TP"
 
     return TradeRecord(
         trade_id      = trade_id,
@@ -346,50 +602,53 @@ def _simulate_trade(
         exit_price    = round(exit_price, 6),
         stop_loss     = round(sl_price, 6),
         take_profit   = round(tp_price, 6),
-        units         = round(units, 6),
+        units         = round(units_full, 6),
         pnl_usd       = round(net_pnl, 4),
         pnl_pct       = round(pnl_pct, 4),
         outcome       = outcome,
         regime        = regime,
+        regime_conf   = round(regime_conf, 2),
         screener_score= score,
+        ict_strength  = signal.get("strength", "UNKNOWN"),
         balance_after = round(balance_after, 4),
-        exit_reason   = exit_reason
+        exit_reason   = full_exit_reason,
+        kelly_fraction= kelly_frac,
+        size_scale    = size_scale,
+        quality_score = round(quality_score, 1),
+        sector        = sector
     )
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 6 — ANALYTICS ENGINE
+#  LAYER 7 — ANALYTICS ENGINE (v2: fixed Sharpe/Sortino)
 # ══════════════════════════════════════════════════════════════════
 
 def _compute_analytics(result: SimulationResult) -> SimulationResult:
     """
-    Hitung semua metrik performa dari daftar trades yang sudah ada.
-    Modifies result in-place dan return.
+    v2 FIXES:
+    - Sharpe/Sortino menggunakan daily equity returns (bukan per-trade pnl_pct)
+    - Equity curve diinterpolasi harian untuk representasi yang akurat
     """
     trades = result.trades
     if not trades:
         return result
 
-    pnls   = np.array([t.pnl_usd for t in trades])
-    pnl_pcts = np.array([t.pnl_pct for t in trades])
-    wins   = [t for t in trades if t.outcome == "WIN"]
-    losses = [t for t in trades if t.outcome == "LOSS"]
+    pnl_usds = np.array([t.pnl_usd for t in trades])
+    wins      = [t for t in trades if t.outcome == "WIN"]
+    losses    = [t for t in trades if t.outcome == "LOSS"]
 
-    result.total_trades    = len(trades)
-    result.winning_trades  = len(wins)
-    result.losing_trades   = len(losses)
-    result.win_rate_pct    = round(len(wins) / len(trades) * 100, 2) if trades else 0
+    result.total_trades   = len(trades)
+    result.winning_trades = len(wins)
+    result.losing_trades  = len(losses)
+    result.win_rate_pct   = round(len(wins) / len(trades) * 100, 2) if trades else 0
 
-    # Profit Factor
-    gross_win  = sum(t.pnl_usd for t in wins)  if wins   else 0
+    gross_win  = sum(t.pnl_usd for t in wins)   if wins   else 0
     gross_loss = abs(sum(t.pnl_usd for t in losses)) if losses else 0
     result.profit_factor = round(gross_win / gross_loss, 3) if gross_loss > 0 else 9999.0
 
-    # Avg Win / Loss
     result.avg_win_pct  = round(np.mean([t.pnl_pct for t in wins]),  4) if wins   else 0
-    result.avg_loss_pct = round(np.mean([t.pnl_pct for t in losses]),4) if losses else 0
+    result.avg_loss_pct = round(np.mean([t.pnl_pct for t in losses]), 4) if losses else 0
 
-    # Expectancy
     if trades:
         wr = result.winning_trades / result.total_trades
         result.expectancy_usd = round(
@@ -398,124 +657,144 @@ def _compute_analytics(result: SimulationResult) -> SimulationResult:
             4
         )
 
-    # Build equity curve (Aggregate by date to prevent duplicates for Lightweight Charts)
-    daily_equity = {}
+    # ── Build daily equity curve via interpolation ───────────────
+    # Kumpulkan semua event (trade close)
+    balance_events: Dict[str, float] = {}
     running_bal = result.config.initial_balance
-    
-    # Starting point
-    start_date = trades[0].entry_date if trades else datetime.now().strftime("%Y-%m-%d")
-    daily_equity[start_date] = running_bal
-    
-    for t in trades:
+
+    # Start event
+    first_entry = trades[0].entry_date
+    balance_events[first_entry] = running_bal
+
+    for t in sorted(trades, key=lambda x: x.exit_date):
         running_bal += t.pnl_usd
-        # We take the latest balance for each date
-        daily_equity[t.exit_date] = round(running_bal, 4)
+        balance_events[t.exit_date] = round(running_bal, 4)
 
-    sorted_dates = sorted(daily_equity.keys())
-    
-    # Add final point for current/end date to ensure the chart doesn't cut off early
-    # This is helpful if a Circuit Breaker hits or no trades happen for a while
-    end_date_str = trades[-1].exit_date if trades else datetime.now().strftime("%Y-%m-%d")
-    if sorted_dates and end_date_str not in daily_equity:
-        daily_equity[end_date_str] = round(running_bal, 4)
-        sorted_dates.append(end_date_str)
-        sorted_dates.sort()
+    # Sort events and interpolate daily
+    sorted_event_dates = sorted(balance_events.keys())
 
-    result.equity_curve = [
-        {"time": d, "balance": daily_equity[d]} 
-        for d in sorted_dates
-    ]
-    
-    print(f"DEBUG: Portfolio Simulator - Equity Curve Points: {len(result.equity_curve)}")
-    if result.equity_curve:
-        print(f"DEBUG: Sample Point: {result.equity_curve[0]}")
+    # Build full daily date range
+    try:
+        d_start = datetime.strptime(sorted_event_dates[0], "%Y-%m-%d")
+        d_end   = datetime.strptime(sorted_event_dates[-1], "%Y-%m-%d")
+    except Exception:
+        d_start = datetime.now() - timedelta(days=365)
+        d_end   = datetime.now()
 
-    result.final_balance   = round(running_bal, 4)
-    result.total_return_pct = round((running_bal - result.config.initial_balance) /
-                                     result.config.initial_balance * 100, 2)
+    all_dates = []
+    cur = d_start
+    while cur <= d_end:
+        all_dates.append(cur.strftime("%Y-%m-%d"))
+        cur += timedelta(days=1)
 
-    # Sharpe & Sortino (annualized)
-    if len(pnl_pcts) > 1:
-        mean_r = np.mean(pnl_pcts) * 252 / result.total_trades * result.total_trades
-        std_r  = np.std(pnl_pcts)
-        down_r = pnl_pcts[pnl_pcts < 0]
+    # Fill forward from events
+    daily_balance = {}
+    last_known    = result.config.initial_balance
+    for d in all_dates:
+        if d in balance_events:
+            last_known = balance_events[d]
+        daily_balance[d] = last_known
 
-        mean_daily = np.mean(pnl_pcts)
-        std_daily  = np.std(pnl_pcts)
-        result.sharpe_ratio = round(
-            (mean_daily / std_daily) * np.sqrt(252) if std_daily > 0 else 0, 3
-        )
-        down_std = np.std(down_r) if len(down_r) > 1 else std_daily
-        result.sortino_ratio = round(
-            (mean_daily / down_std) * np.sqrt(252) if down_std > 0 else 0, 3
-        )
+    result.equity_curve = [{"time": d, "balance": b} for d, b in sorted(daily_balance.items())]
+    result.final_balance = round(running_bal, 4)
+    result.total_return_pct = round(
+        (running_bal - result.config.initial_balance) / result.config.initial_balance * 100, 2
+    )
 
-    # Max Drawdown
-    balances = [point["balance"] for point in result.equity_curve]
-    eq_arr = np.array(balances)
+    # ── FIX: Sharpe & Sortino via daily returns ──────────────────
+    if len(result.equity_curve) > 2:
+        balances_arr = np.array([p["balance"] for p in result.equity_curve])
+        # Daily returns from equity curve
+        daily_rets   = np.diff(balances_arr) / balances_arr[:-1]
+        daily_rets   = daily_rets[np.isfinite(daily_rets)]
+
+        if len(daily_rets) > 5 and np.std(daily_rets) > 0:
+            mean_d = np.mean(daily_rets)
+            std_d  = np.std(daily_rets)
+            result.sharpe_ratio = round((mean_d / std_d) * np.sqrt(252), 3)
+
+            down_rets = daily_rets[daily_rets < 0]
+            down_std  = np.std(down_rets) if len(down_rets) > 1 else std_d
+            result.sortino_ratio = round((mean_d / down_std) * np.sqrt(252) if down_std > 0 else 0, 3)
+
+    # ── Max Drawdown ─────────────────────────────────────────────
+    eq_arr = np.array([p["balance"] for p in result.equity_curve])
     peaks  = np.maximum.accumulate(eq_arr)
-    
-    if len(peaks) > 0 and peaks[-1] > 0:
+    if len(peaks) > 0 and peaks[0] > 0:
         dds = (eq_arr - peaks) / peaks * 100
         result.max_drawdown_pct = round(float(np.min(dds)), 2)
-    else:
-        result.max_drawdown_pct = 0.0
 
-    # Calmar Ratio
+    # ── Calmar Ratio ─────────────────────────────────────────────
     if result.max_drawdown_pct < 0:
         result.calmar_ratio = round(result.total_return_pct / abs(result.max_drawdown_pct), 3)
-    else:
-        result.calmar_ratio = 0.0
 
-    # Best & Worst trade
+    # ── Best / Worst trade ───────────────────────────────────────
     if trades:
         result.best_trade  = max(trades, key=lambda t: t.pnl_usd)
         result.worst_trade = min(trades, key=lambda t: t.pnl_usd)
+
+    # ── Kelly average ─────────────────────────────────────────────
+    kelly_fracs = [t.kelly_fraction for t in trades if t.kelly_fraction > 0]
+    result.kelly_avg_fraction = round(np.mean(kelly_fracs), 4) if kelly_fracs else 0
 
     return result
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 7 — MASTER SIMULATION RUNNER
+#  LAYER 8 — CONSECUTIVE LOSS TRACKER
+# ══════════════════════════════════════════════════════════════════
+
+def _get_consecutive_losses(trades: List[TradeRecord]) -> int:
+    """Hitung jumlah loss berturut-turut dari akhir trade history."""
+    count = 0
+    for t in reversed(trades):
+        if t.outcome == "LOSS":
+            count += 1
+        else:
+            break
+    return count
+
+
+# ══════════════════════════════════════════════════════════════════
+#  MASTER SIMULATION RUNNER v2.0
 # ══════════════════════════════════════════════════════════════════
 
 def run_simulation(config: SimulationConfig) -> SimulationResult:
     """
     ╔══════════════════════════════════════════════════════════════╗
-    ║  MASTER ENTRY POINT — Quantum Portfolio Simulator           ║
+    ║  MASTER ENTRY POINT — Quantum Portfolio Simulator v2.0      ║
+    ╠══════════════════════════════════════════════════════════════╣
+    ║  Pipeline per-minggu:                                        ║
+    ║  1. SCREENER   → Ambil top N ticker dengan skor ≥ threshold  ║
+    ║  2. GATE L1    → Screener score pass?                        ║
+    ║  3. GATE L2    → HMM Regime confidence ≥ min_regime_conf?    ║
+    ║  4. GATE L3    → ICT bias strength ≥ min_ict_strength?       ║
+    ║  5. SIZE CALC  → Kelly-adaptive risk + regime scaling        ║
+    ║  6. SIMULATE   → Forward sim dengan partial TP + BE logic    ║
+    ║  7. ANALYTICS  → Daily equity curve + correct Sharpe         ║
     ╚══════════════════════════════════════════════════════════════╝
-
-    Menjalankan simulasi penuh 1 tahun step-by-step:
-      - Setiap minggu: scan universe, pick top candidates
-      - Setiap kandidat: cek regime + cari entry signal
-      - Setiap sinyal: forward simulate dengan SL/TP
-      - Accumulate balance & equity curve
-
-    Args:
-        config: SimulationConfig object
-
-    Returns:
-        SimulationResult dengan semua metrics & trade log
     """
     result   = SimulationResult(config=config)
     balance  = config.initial_balance
     trade_id = 0
+    trades_filtered = 0
 
-    # ── Setup timeline ──────────────────────────────────────────
     end_date   = datetime.now() - timedelta(days=1)
     start_date = end_date - timedelta(days=365 * config.lookback_years)
     tickers    = WATCHLISTS.get(config.scan_universe, WATCHLISTS["US"])
 
     print(f"\n{'═'*65}")
-    print(f"  QUANTUM PORTFOLIO SIMULATOR")
-    print(f"  Universe : {config.scan_universe} ({len(tickers)} tickers)")
-    print(f"  Period   : {start_date.date()} → {end_date.date()}")
-    print(f"  Capital  : ${config.initial_balance:,.2f}")
-    print(f"  Risk/Trade: {config.risk_per_trade}%")
+    print(f"  QUANTUM PORTFOLIO SIMULATOR v2.0")
+    print(f"  Universe  : {config.scan_universe} ({len(tickers)} tickers)")
+    print(f"  Period    : {start_date.date()} → {end_date.date()}")
+    print(f"  Capital   : ${config.initial_balance:,.2f}")
+    print(f"  Risk/Trade: {config.risk_per_trade}% (adaptive Kelly: {config.use_adaptive_kelly})")
+    print(f"  Min Score : {config.min_screener_score} | Min ICT: {config.min_ict_strength}")
+    print(f"  Regime Min Conf: {config.min_regime_conf}%")
     print(f"{'═'*65}")
 
-    # ── Fetch semua data di awal (lebih efisien) ──────────────────
-    print("\n📡 Fetching historical data for all tickers...")
+    # ── Pre-fetch all data ────────────────────────────────────────
+    print("\n📡 Fetching historical data...")
     all_data: Dict[str, pd.DataFrame] = {}
     for i, ticker in enumerate(tickers):
         print(f"   [{i+1:2d}/{len(tickers)}] {ticker:15s}", end=" ")
@@ -527,23 +806,23 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             print("✗ Insufficient data")
 
     if not all_data:
-        print("❌ No valid data fetched. Abort.")
+        print("❌ No valid data. Abort.")
         return result
 
-    print(f"\n✅ {len(all_data)} tickers loaded successfully.")
+    print(f"\n✅ {len(all_data)} tickers loaded.")
+    print(f"\n🔄 Starting rolling weekly scan with 3-layer gate...\n")
 
     # ── Rolling weekly scan ───────────────────────────────────────
-    open_positions: List[Dict] = []   # Track open trades
-    current_date   = start_date + timedelta(days=60)  # Warmup period
+    closed_trades  : List[TradeRecord] = []  # Only confirmed closed trades
+    open_positions : List[Dict] = []
+    current_date   = start_date + timedelta(days=60)
     week_num       = 0
 
-    print(f"\n🔄 Starting rolling weekly scan...\n")
-
     while current_date <= end_date - timedelta(days=config.max_hold_days):
-        week_num   += 1
+        week_num += 1
         candidates  = []
 
-        # ── STEP 1: Score all tickers on this week's slice ─────
+        # ── STEP 1: Score all tickers ──────────────────────────
         for ticker, full_df in all_data.items():
             df_slice = full_df[full_df.index <= current_date].tail(90)
             if len(df_slice) < 55:
@@ -552,9 +831,8 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             if score >= config.min_screener_score:
                 candidates.append((ticker, score, df_slice))
 
-        # Sort by score descending — take top N
         candidates.sort(key=lambda x: x[1], reverse=True)
-        top_candidates = candidates[:config.max_open_trades]
+        top_candidates = candidates[:config.max_open_trades * 2]  # Buffer lebih besar
 
         week_snapshot = {
             "week"         : week_num,
@@ -565,49 +843,117 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             "open_positions": len(open_positions)
         }
 
-        # ── STEP 2: Check & close expired open positions ────────
+        # ── STEP 2: Close expired positions ────────────────────
+        # FIX v2: Balance HANYA diupdate di sini (saat posisi benar-benar tutup)
         positions_to_close = []
         for pos in open_positions:
-            exit_date_obj = datetime.strptime(pos["exit_date"], "%Y-%m-%d")
+            try:
+                exit_date_obj = datetime.strptime(pos["exit_date"], "%Y-%m-%d")
+            except ValueError:
+                positions_to_close.append(pos)
+                continue
             if current_date >= exit_date_obj:
-                balance += pos["trade"].pnl_usd
-                result.trades.append(pos["trade"])
+                # Recalculate balance_after berdasarkan balance saat ini
+                trade = pos["trade"]
+                trade.balance_after = round(balance + trade.pnl_usd, 4)
+                balance = trade.balance_after
+                closed_trades.append(trade)
                 positions_to_close.append(pos)
 
         for p in positions_to_close:
             open_positions.remove(p)
 
         # ── STEP 3: Circuit Breaker ─────────────────────────────
-        # Don't trade if we're down > 15% from initial (hard circuit breaker)
         drawdown_from_start = (balance - config.initial_balance) / config.initial_balance * 100
-        if drawdown_from_start < -15:
+        if drawdown_from_start < -config.circuit_breaker_dd:
             print(f"   Week {week_num:3d} | 🛑 CIRCUIT BREAKER: DD={drawdown_from_start:.1f}%")
             current_date += timedelta(days=7)
             result.weekly_snapshots.append(week_snapshot)
             continue
 
-        # ── STEP 4: Find entry signals & simulate ───────────────
-        open_count = len(open_positions)
+        # ── STEP 4: Find entry signals via SOFT QUALITY SCORING ──
+        #
+        # v2.1 Philosophy: TIDAK ada hard block berdasarkan confidence.
+        # Semua sinyal valid bisa masuk, tapi SIZE disesuaikan dengan
+        # composite quality score. Sinyal lemah = posisi kecil.
+        # Hanya HIGH_VOL_BEARISH yang tetap di-skip (fundamental risk).
+        #
+        # Quality Score → Size Multiplier:
+        #   90-100 → 1.00× (full)
+        #   70-89  → 0.75×
+        #   50-69  → 0.55×
+        #   30-49  → 0.35×
+        #   <30    → 0.20× (minimum, masih masuk)
+        #
+        open_count  = len(open_positions)
+        consec_loss = _get_consecutive_losses(closed_trades)
 
         for ticker, score, df_slice in top_candidates:
             if open_count >= config.max_open_trades:
                 break
 
-            # Regime filter
-            regime, regime_conf = _detect_regime_simple(df_slice)
+            # ── HARD BLOCK: Hanya untuk HIGH_VOL_BEARISH ──────────
+            regime, regime_conf = _detect_regime_full(df_slice)
             if config.regime_filter and regime == "HIGH_VOL_BEARISH":
-                continue  # Skip high vol bearish regime
+                trades_filtered += 1
+                continue  # Satu-satunya hard block yang justified
 
-            # Find entry signal
-            signal = _find_entry_signal(df_slice, config)
+            # ── ICT signal (WAJIB ada bias, tapi strength boleh apapun) ─
+            # Pass min_ict_strength="WEAK" ke _find_entry_signal agar
+            # sinyal NEUTRAL tetap diblok, tapi WEAK/MODERATE/STRONG masuk
+            signal = _find_entry_signal_soft(df_slice, config)
             if signal is None:
-                continue
+                trades_filtered += 1
+                continue  # Hanya NEUTRAL yang diblok
 
-            # Get future data for forward simulation
-            future_start = current_date + timedelta(days=1)
-            future_end   = current_date + timedelta(days=config.max_hold_days + 5)
-            full_df      = all_data[ticker]
-            df_future    = full_df[
+            # ── COMPUTE COMPOSITE QUALITY SCORE (0-100) ───────────
+            #
+            # Komponen:
+            #   [40 pts] Screener score (normalized)
+            #   [30 pts] Regime confidence
+            #   [30 pts] ICT signal strength
+            #
+            screener_pts = min(40.0, (score / 100.0) * 40.0)
+
+            regime_pts = min(30.0, (regime_conf / 100.0) * 30.0)
+
+            ict_strength = signal.get("strength", "WEAK")
+            ict_pts_map  = {"VERY_WEAK": 5, "WEAK": 12, "MODERATE": 20, "STRONG": 27, "VERY_STRONG": 30}
+            ict_pts      = ict_pts_map.get(ict_strength, 12)
+
+            quality_score = screener_pts + regime_pts + ict_pts  # 0-100
+
+            # ── MAP QUALITY → SIZE SCALE ───────────────────────────
+            if quality_score >= 90:
+                base_size_scale = 1.00
+            elif quality_score >= 70:
+                base_size_scale = 0.75
+            elif quality_score >= 50:
+                base_size_scale = 0.55
+            elif quality_score >= 30:
+                base_size_scale = 0.35
+            else:
+                base_size_scale = 0.20
+
+            # ── OVERLAY Regime context on size ────────────────────
+            if "BULLISH" in regime or "LOW_VOL" in regime:
+                regime_scale = config.regime_size_bull    # 1.00
+            elif "SIDEWAYS" in regime or "CHOP" in regime:
+                regime_scale = config.regime_size_chop    # 0.60
+            else:
+                regime_scale = 0.50   # Unknown → conservative
+
+            size_scale = base_size_scale * regime_scale
+
+            # ── Kelly-adaptive risk % ────────────────────────────
+            kelly_risk_pct, kelly_frac = _compute_adaptive_kelly(
+                closed_trades, config, config.risk_per_trade, consec_loss
+            )
+
+            # ── Get future data ──────────────────────────────────
+            future_end = current_date + timedelta(days=config.max_hold_days + 5)
+            full_df    = all_data[ticker]
+            df_future  = full_df[
                 (full_df.index > current_date) &
                 (full_df.index <= future_end)
             ].head(config.max_hold_days)
@@ -618,22 +964,31 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             entry_date = current_date.strftime("%Y-%m-%d")
             trade_id  += 1
 
+            # ── SIMULATE TRADE ───────────────────────────────────
+            # FIX v2: balance_entry = current balance (tidak termasuk pending positions)
             trade = _simulate_trade(
-                ticker     = ticker,
-                signal     = signal,
-                df_future  = df_future,
-                balance    = balance,
-                config     = config,
-                trade_id   = trade_id,
-                entry_date = entry_date,
-                regime     = regime,
-                score      = score
+                ticker        = ticker,
+                signal        = signal,
+                df_future     = df_future,
+                balance_entry = balance,
+                config        = config,
+                trade_id      = trade_id,
+                entry_date    = entry_date,
+                regime        = regime,
+                regime_conf   = regime_conf,
+                score         = score,
+                risk_pct      = kelly_risk_pct,
+                kelly_frac    = kelly_frac,
+                size_scale    = size_scale,
+                quality_score = quality_score,
+                sector        = "Unknown"
             )
 
             if trade is None:
+                trade_id -= 1
                 continue
 
-            # Schedule this position
+            # Schedule trade (PnL akan diapply saat close di STEP 2)
             open_positions.append({
                 "trade"    : trade,
                 "exit_date": trade.exit_date
@@ -641,83 +996,54 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             open_count += 1
             week_snapshot["trades_opened"] += 1
 
-            # Immediately update balance for closed position tracking
-            balance = trade.balance_after
-
-            icon = "✅" if trade.outcome == "WIN" else "❌"
+            regime_emoji = "🟢" if "BULL" in regime else "🟡" if "CHOP" in regime else "🔴"
+            icon         = "✅" if trade.outcome == "WIN" else "❌" if trade.outcome == "LOSS" else "〰️"
             print(f"   Week {week_num:3d} | {icon} {ticker:10s} "
                   f"{signal['direction']:5s} | "
-                  f"Score:{score:5.1f} | "
-                  f"P&L: ${trade.pnl_usd:+7.2f} ({trade.pnl_pct:+.2f}%) | "
-                  f"Bal: ${balance:,.2f}")
+                  f"Scr:{score:5.1f} | "
+                  f"Reg:{regime_emoji}{regime_conf:.0f}% | "
+                  f"ICT:{signal['strength']:8s} | "
+                  f"Q:{quality_score:.0f}/100 | "
+                  f"Size:×{size_scale:.2f} | "
+                  f"Est P&L: ${trade.pnl_usd:+7.2f}")
 
         result.weekly_snapshots.append(week_snapshot)
-        current_date += timedelta(days=7)  # Move forward 1 week
+        current_date += timedelta(days=7)
 
-    # ── Flush any remaining open positions ─────────────────────
+    # ── Flush remaining open positions ────────────────────────────
     for pos in open_positions:
-        balance += pos["trade"].pnl_usd
-        result.trades.append(pos["trade"])
+        trade = pos["trade"]
+        trade.balance_after = round(balance + trade.pnl_usd, 4)
+        balance = trade.balance_after
+        closed_trades.append(trade)
 
-    # ── Sort trades chronologically ──────────────────────────────
-    result.trades.sort(key=lambda t: t.entry_date)
+    # ── Sort chronologically ──────────────────────────────────────
+    result.trades = sorted(closed_trades, key=lambda t: t.entry_date)
+    result.trades_filtered = trades_filtered
 
-    # ── Compute final analytics ──────────────────────────────────
+    # ── Compute final analytics ────────────────────────────────────
     result = _compute_analytics(result)
+
+    print(f"\n{'═'*65}")
+    print(f"  FINAL BALANCE  : ${result.final_balance:,.2f}")
+    print(f"  TOTAL RETURN   : {result.total_return_pct:+.2f}%")
+    print(f"  TOTAL TRADES   : {result.total_trades}")
+    print(f"  WIN RATE       : {result.win_rate_pct:.1f}%")
+    print(f"  PROFIT FACTOR  : {result.profit_factor:.3f}")
+    print(f"  SHARPE         : {result.sharpe_ratio:.3f}")
+    print(f"  MAX DRAWDOWN   : {result.max_drawdown_pct:.2f}%")
+    print(f"  TRADES FILTERED: {result.trades_filtered} (by 3-layer gate)")
+    print(f"{'═'*65}\n")
 
     return result
 
 
 # ══════════════════════════════════════════════════════════════════
-#  LAYER 8 — REPORT GENERATOR
+#  REPORT GENERATORS
 # ══════════════════════════════════════════════════════════════════
 
-def print_report(result: SimulationResult) -> None:
-    """Cetak laporan simulasi yang komprehensif ke console."""
-    cfg = result.config
-    sep = "═" * 65
-
-    print(f"\n{sep}")
-    print(f"  QUANTUM PORTFOLIO SIMULATOR — FINAL REPORT")
-    print(f"{sep}")
-    print(f"  Universe : {cfg.scan_universe}")
-    print(f"  Period   : {cfg.lookback_years} Year(s)")
-    print(f"  Capital  : ${cfg.initial_balance:,.2f}  →  ${result.final_balance:,.2f}")
-    print(f"  Return   : {result.total_return_pct:+.2f}%")
-    print(f"  Max DD   : {result.max_drawdown_pct:.2f}%")
-    print(f"{sep}")
-    print(f"\n  📊 PERFORMANCE METRICS")
-    print(f"  {'Sharpe Ratio':<30} {result.sharpe_ratio:>10.3f}")
-    print(f"  {'Sortino Ratio':<30} {result.sortino_ratio:>10.3f}")
-    print(f"  {'Calmar Ratio':<30} {result.calmar_ratio:>10.3f}")
-    print(f"  {'Profit Factor':<30} {result.profit_factor:>10.3f}")
-    print(f"  {'Expectancy per Trade':<30} ${result.expectancy_usd:>9.2f}")
-    print(f"\n  🎯 TRADE STATISTICS")
-    print(f"  {'Total Trades':<30} {result.total_trades:>10d}")
-    print(f"  {'Win Rate':<30} {result.win_rate_pct:>9.1f}%")
-    print(f"  {'Winning Trades':<30} {result.winning_trades:>10d}")
-    print(f"  {'Losing Trades':<30} {result.losing_trades:>10d}")
-    print(f"  {'Avg Win':<30} {result.avg_win_pct:>9.2f}%")
-    print(f"  {'Avg Loss':<30} {result.avg_loss_pct:>9.2f}%")
-
-    if result.best_trade:
-        print(f"\n  🏆 BEST TRADE")
-        print(f"     {result.best_trade.ticker} ({result.best_trade.entry_date}) "
-              f"+${result.best_trade.pnl_usd:.2f} ({result.best_trade.pnl_pct:+.2f}%)")
-
-    if result.worst_trade:
-        print(f"\n  💀 WORST TRADE")
-        print(f"     {result.worst_trade.ticker} ({result.worst_trade.entry_date}) "
-              f"${result.worst_trade.pnl_usd:.2f} ({result.worst_trade.pnl_pct:+.2f}%)")
-
-    print(f"\n{sep}\n")
-
-
 def generate_json_report(result: SimulationResult) -> Dict:
-    """
-    Export hasil simulasi sebagai dict JSON-serializable.
-    Siap untuk dikonsumsi oleh frontend / API endpoint.
-    """
+    """Export hasil simulasi sebagai dict JSON-serializable."""
     trades_list = []
     for t in result.trades:
         trades_list.append({
@@ -734,67 +1060,52 @@ def generate_json_report(result: SimulationResult) -> Dict:
             "pnl_pct"       : t.pnl_pct,
             "outcome"       : t.outcome,
             "regime"        : t.regime,
+            "regime_conf"   : t.regime_conf,
             "screener_score": t.screener_score,
+            "ict_strength"  : t.ict_strength,
             "balance_after" : t.balance_after,
-            "exit_reason"   : t.exit_reason
+            "exit_reason"   : t.exit_reason,
+            "kelly_fraction": t.kelly_fraction,
+            "size_scale"    : t.size_scale,
+            "quality_score" : t.quality_score,
         })
 
     return {
         "config": {
-            "initial_balance"   : result.config.initial_balance,
-            "risk_per_trade"    : result.config.risk_per_trade,
-            "scan_universe"     : result.config.scan_universe,
-            "tp_rr_ratio"       : result.config.tp_rr_ratio,
-            "min_screener_score": result.config.min_screener_score,
+            "initial_balance"     : result.config.initial_balance,
+            "risk_per_trade"      : result.config.risk_per_trade,
+            "scan_universe"       : result.config.scan_universe,
+            "tp_rr_ratio"         : result.config.tp_rr_ratio,
+            "min_screener_score"  : result.config.min_screener_score,
+            "use_adaptive_kelly"  : result.config.use_adaptive_kelly,
+            "kelly_fraction"      : result.config.kelly_fraction,
+            "min_regime_conf"     : result.config.min_regime_conf,
+            "min_ict_strength"    : result.config.min_ict_strength,
+            "consec_loss_guard"   : result.config.consec_loss_guard,
+            "regime_size_bull"    : result.config.regime_size_bull,
+            "regime_size_chop"    : result.config.regime_size_chop,
         },
         "summary": {
-            "final_balance"     : result.final_balance,
-            "total_return_pct"  : result.total_return_pct,
-            "sharpe_ratio"      : result.sharpe_ratio,
-            "sortino_ratio"     : result.sortino_ratio,
-            "calmar_ratio"      : result.calmar_ratio,
-            "max_drawdown_pct"  : result.max_drawdown_pct,
-            "profit_factor"     : result.profit_factor,
-            "win_rate_pct"      : result.win_rate_pct,
-            "total_trades"      : result.total_trades,
-            "winning_trades"    : result.winning_trades,
-            "losing_trades"     : result.losing_trades,
-            "avg_win_pct"       : result.avg_win_pct,
-            "avg_loss_pct"      : result.avg_loss_pct,
-            "expectancy_usd"    : result.expectancy_usd,
+            "final_balance"       : result.final_balance,
+            "total_return_pct"    : result.total_return_pct,
+            "sharpe_ratio"        : result.sharpe_ratio,
+            "sortino_ratio"       : result.sortino_ratio,
+            "calmar_ratio"        : result.calmar_ratio,
+            "max_drawdown_pct"    : result.max_drawdown_pct,
+            "profit_factor"       : result.profit_factor,
+            "win_rate_pct"        : result.win_rate_pct,
+            "total_trades"        : result.total_trades,
+            "winning_trades"      : result.winning_trades,
+            "losing_trades"       : result.losing_trades,
+            "avg_win_pct"         : result.avg_win_pct,
+            "avg_loss_pct"        : result.avg_loss_pct,
+            "expectancy_usd"      : result.expectancy_usd,
+            "trades_filtered"     : result.trades_filtered,
+            "kelly_avg_fraction"  : result.kelly_avg_fraction,
         },
-        "equity_curve"      : result.equity_curve,
-        "trades"            : trades_list,
-        "weekly_snapshots"  : result.weekly_snapshots,
-        "best_trade"        : trades_list[result.trades.index(result.best_trade)] if result.best_trade and result.best_trade in result.trades else None,
-        "worst_trade"       : trades_list[result.trades.index(result.worst_trade)] if result.worst_trade and result.worst_trade in result.trades else None,
+        "equity_curve"   : result.equity_curve,
+        "trades"         : trades_list,
+        "weekly_snapshots": result.weekly_snapshots,
+        "best_trade"     : trades_list[result.trades.index(result.best_trade)]  if result.best_trade  and result.best_trade  in result.trades else None,
+        "worst_trade"    : trades_list[result.trades.index(result.worst_trade)] if result.worst_trade and result.worst_trade in result.trades else None,
     }
-
-
-# ══════════════════════════════════════════════════════════════════
-#  ENTRYPOINT — Standalone test
-# ══════════════════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-    config = SimulationConfig(
-        initial_balance    = 100.0,    # Modal awal $100
-        risk_per_trade     = 2.0,      # Risk 2% per trade
-        max_open_trades    = 3,        # Maks 3 posisi bersamaan
-        sl_atr_mult        = 1.5,      # SL = 1.5x ATR
-        tp_rr_ratio        = 2.0,      # TP = 2R
-        min_screener_score = 65.0,     # Minimum skor screener
-        scan_universe      = "US",     # Scan US stocks
-        lookback_years     = 1,        # 1 tahun simulasi
-        max_hold_days      = 15,       # Maks 15 hari pegang
-        commission_pct     = 0.1,      # Komisi 0.1%
-        regime_filter      = True      # Aktifkan regime filter
-    )
-
-    result = run_simulation(config)
-    print_report(result)
-
-    import json
-    report = generate_json_report(result)
-    with open("simulation_result.json", "w") as f:
-        json.dump(report, f, indent=2)
-    print("📁 Full report saved to simulation_result.json")

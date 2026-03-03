@@ -9,7 +9,7 @@ Platform ini dibangun untuk trader profesional yang menginginkan data yang objek
 
 ---
 
-## ⚡ Fitur Utama (Core Features)
+## Fitur Utama (Core Features)
 
 ### 1. Satin Screener Engine (Automated Ranking)
 Mesin pencari peluang otomatis yang menscan ratusan ticker secara paralel dan menyaringnya berdasarkan skor kualitas kuantitatif.
