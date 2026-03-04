@@ -762,10 +762,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = ["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials = True,
-    allow_methods     = ["*"],
-    allow_headers     = ["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://apexq-m5hjixdfc-faradiansyahrokans-projects.vercel.app"
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -784,16 +789,20 @@ async def global_exception_handler(request: Request, exc: Exception):
             "path"   : request.url.path,
         }),
     )
-    response.headers["Access-Control-Allow-Origin"]      = "http://localhost:5173"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     response = JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
-    response.headers["Access-Control-Allow-Origin"]      = "http://localhost:5173"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
