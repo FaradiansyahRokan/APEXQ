@@ -55,7 +55,7 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi import Request
@@ -67,6 +67,8 @@ import yfinance as yf
 import json
 import uvicorn
 import traceback
+from app.engine.hft_engine import hft_spider
+import asyncio
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -229,7 +231,7 @@ v6_vrp              = calculate_vol_risk_premium
 #  PHASE 5 — HWM PROTECTION ENGINE IMPORT
 #  Drop-in companion: apex_hwm_engine.py (must be in same directory)
 # ══════════════════════════════════════════════════════════════════
-from apex_hwm_engine import (
+from app.engine.apex_hwm_engine import (
     HWMSession,
     HWMConfig,
     HWMRiskDecision,
@@ -248,7 +250,7 @@ from apex_hwm_engine import (
 # ══════════════════════════════════════════════════════════════════
 #  APEX EQUITY ARMOR — Import (apex_equity_armor.py must be present)
 # ══════════════════════════════════════════════════════════════════
-from apex_equity_armor import (
+from app.engine.apex_equity_armor import (
     EquityArmor,
     ArmorConfig,
     MilestoneTracker,
@@ -1497,6 +1499,83 @@ async def simulate(config: SimulationConfig):
     return sanitize_data(generate_json_report(result))
 
 
+@app.post("/api/simulate/stream")
+async def simulate_stream(config: SimulationConfig):
+    """
+    SSE endpoint — stream progress simulasi real-time ke frontend.
+    Frontend connect via EventSource / ReadableStream, terima events:
+      phase | tick | trade | done | error
+    Setiap event = "data: <json>\\n\\n"
+
+    ARSITEKTUR BENAR — Thread + asyncio.Queue:
+    ┌─────────────────────────────────────────────────────────┐
+    │  Background Thread                                       │
+    │  for chunk in run_simulation_stream(config):            │
+    │      loop.call_soon_threadsafe(queue.put_nowait, chunk) │
+    │  → push sentinel (None) saat selesai                    │
+    └────────────────────┬────────────────────────────────────┘
+                         │  asyncio.Queue (thread-safe bridge)
+    ┌────────────────────▼────────────────────────────────────┐
+    │  Async Generator (event loop thread)                    │
+    │  chunk = await queue.get()   ← non-blocking await       │
+    │  yield chunk  → StreamingResponse → frontend            │
+    └─────────────────────────────────────────────────────────┘
+
+    Kenapa ini benar vs run_in_executor + next():
+    - run_in_executor + next() : tiap next() block thread sampai
+      yield berikutnya (bisa menit). HTTP connection timeout duluan.
+    - Thread + Queue           : simulasi jalan bebas di thread,
+      event dikirim ke queue segera saat yield, async generator
+      langsung forward ke frontend tanpa delay.
+    """
+    from app.engine.portfolio_simulator import run_simulation_stream
+    import asyncio
+    import threading
+    import json as _j
+
+    async def event_generator():
+        loop  = asyncio.get_running_loop()
+        queue = asyncio.Queue()
+
+        # ── Jalankan seluruh generator sinkron di background thread ──
+        def run_in_thread():
+            try:
+                for chunk in run_simulation_stream(config):
+                    # call_soon_threadsafe: satu-satunya cara aman
+                    # untuk push dari thread ke asyncio.Queue
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
+            except Exception as exc:
+                err_event = "data: " + _j.dumps({
+                    "type"   : "error",
+                    "message": str(exc),
+                }) + "\n\n"
+                loop.call_soon_threadsafe(queue.put_nowait, err_event)
+            finally:
+                # Sentinel — beritahu generator async bahwa stream sudah selesai
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        thread = threading.Thread(target=run_in_thread, daemon=True)
+        thread.start()
+
+        # ── Baca dari queue dan forward ke frontend ───────────────────
+        while True:
+            chunk = await queue.get()
+            if chunk is None:   # sentinel → selesai
+                break
+            yield chunk
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control"              : "no-cache",
+            "Connection"                 : "keep-alive",
+            "X-Accel-Buffering"          : "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 # ── Phase 2: Risk Architecture ────────────────────────────────────
 
 class VolTargetRequest(BaseModel):
@@ -1670,7 +1749,7 @@ def v4_institutional_report(req: InstitutionalReportRequest):
     if df is None or df.empty: raise HTTPException(404, f"No data for {req.ticker}")
     close = df["Close"].dropna()
     log_r = np.log(close / close.shift(1)).replace([np.inf, -np.inf], np.nan).dropna().values
-    return sanitize_data(generate_institutional_report(req.strategy_name, log_r, req.n_trials_tested, req.initial_capital))
+    return sanitize_data(generate_institutional_report(req.strategy_name, log_r, None, req.initial_capital, req.n_trials_tested))
 
 
 @app.post("/api/v4/monte-carlo")
@@ -2511,6 +2590,101 @@ def armor_walk_forward(req: ArmorWalkForwardRequest):
     )
     return sanitize_data(result)
 
+"""
+══════════════════════════════════════════════════════════════════
+  HFT LITE ROUTES  —  paste these into main.py
+  Required imports (add to top of main.py if not already there):
+    from fastapi import WebSocket, WebSocketDisconnect
+    from hft_engine import hft_spider
+    import asyncio
+══════════════════════════════════════════════════════════════════
+"""
+
+# ── ADD THESE IMPORTS AT THE TOP OF main.py ──────────────────────
+# from fastapi import WebSocket, WebSocketDisconnect
+# from hft_engine import hft_spider
+
+# ═══════════════════════════════════════════════════════════════
+#  HFT LITE ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@app.post("/api/hft/start")
+async def hft_start(body: dict = {}):
+    """Start the HFT scanner."""
+    balance = float(body.get("balance", 1000.0))
+    if not hft_spider.running:
+        hft_spider.set_balance(balance)
+    await hft_spider.start()
+    return {"ok": True, "message": "HFT Spider started", "balance": hft_spider.balance}
+
+
+@app.post("/api/hft/stop")
+async def hft_stop():
+    """Stop the HFT scanner and close all positions."""
+    await hft_spider.stop()
+    return {"ok": True, "message": "HFT Spider stopped"}
+
+
+@app.post("/api/hft/reset")
+async def hft_reset(body: dict = {}):
+    """Full reset — stop, clear all state, reinitialize."""
+    await hft_spider.stop()
+    hft_spider.__init__()
+    balance = float(body.get("balance", 1000.0))
+    hft_spider.set_balance(balance)
+    return {"ok": True, "message": "HFT Spider reset", "balance": balance}
+
+
+@app.post("/api/hft/config")
+async def hft_config(body: dict):
+    """Update engine config on the fly (even while running)."""
+    hft_spider.configure(body)
+    return {"ok": True, "config": body}
+
+
+@app.get("/api/hft/status")
+async def hft_status():
+    """Full status snapshot — positions, stats, equity, events."""
+    return hft_spider.get_status()
+
+
+@app.post("/api/hft/close/{position_id}")
+async def hft_close_position(position_id: str):
+    """Manually close a specific position."""
+    pos = hft_spider.positions.get(position_id)
+    if not pos or pos.status != "OPEN":
+        return {"ok": False, "error": "Position not found or already closed"}
+    hft_spider._close_position(pos, "MANUAL")
+    return {"ok": True, "message": f"Position {position_id} closed manually"}
+
+
+@app.post("/api/hft/close-all")
+async def hft_close_all():
+    """Manually close all open positions."""
+    closed = 0
+    for pos in list(hft_spider.positions.values()):
+        if pos.status == "OPEN":
+            hft_spider._close_position(pos, "MANUAL")
+            closed += 1
+    return {"ok": True, "closed": closed}
+
+
+@app.websocket("/ws/hft")
+async def hft_websocket(websocket: WebSocket):
+    """
+    WebSocket — pushes status updates every 1.5s to connected clients.
+    Frontend connects once, receives live P&L / positions / events.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            status = hft_spider.get_status()
+            await websocket.send_json(status)
+            await asyncio.sleep(1.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
 
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT

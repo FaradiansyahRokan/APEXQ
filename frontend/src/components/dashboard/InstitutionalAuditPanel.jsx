@@ -100,7 +100,17 @@ export default function InstitutionalAuditPanel() {
     finally { setLoading(false); }
   }, [ticker, nTrials]);
 
-  const perf = data?.report?.performance_summary;
+  // ── Field mapping: align frontend to actual API response keys ──
+  const _perf = data?.report?.performance || {};
+  // Normalise field names — API returns cagr_pct, sharpe_raw, volatility_pct
+  const perf = {
+    annualized_return_pct : _perf.cagr_pct,
+    annualized_vol_pct    : _perf.volatility_pct,
+    raw_sharpe            : _perf.sharpe_raw,
+    calmar_ratio          : _perf.calmar_ratio,
+    max_drawdown_pct      : _perf.max_drawdown_pct,
+    n_observations        : data?.report?.statistical_validity?.n_obs,
+  };
   const stat = data?.report?.statistical_validity;
   const boot = stat?.bootstrap_sharpe_95ci;
   const dsr  = stat?.deflated_sharpe_ratio;
@@ -190,7 +200,7 @@ export default function InstitutionalAuditPanel() {
                 <div style={{ display:"flex",gap:24,flexWrap:"wrap",marginTop:18 }}>
                   <Metric label="P(SR > 0)"   value={`${boot?.prob_sr_positive?.toFixed(1)}%`}  color={(boot?.prob_sr_positive||0)>=80?GN:AM} />
                   <Metric label="P(SR > 1.0)" value={`${boot?.prob_sr_above_1?.toFixed(1)}%`}   color={(boot?.prob_sr_above_1||0)>=60?GN:AM} />
-                  <Metric label="P(SR > 1.5)" value={`${boot?.prob_sr_above_15?.toFixed(1)}%`}  color={(boot?.prob_sr_above_15||0)>=40?GN:RD} />
+                  <Metric label="P(SR > 1.5)" value={boot?.prob_sr_above_15 != null ? `${boot.prob_sr_above_15.toFixed(1)}%` : "—"}  color={(boot?.prob_sr_above_15||0)>=40?GN:RD} />
                 </div>
               </div>
               <div className="card" style={{ padding:22 }}>
@@ -224,7 +234,9 @@ export default function InstitutionalAuditPanel() {
             <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
               <div className="card" style={{ padding:22 }}>
                 <SectionHead>CVaR — Conditional Value at Risk (Cornish-Fisher corrected)</SectionHead>
-                {Object.entries(risk.var_cvar||{}).map(([cl,v]) => <CVarRow key={cl} label={cl.replace("pct","% CI")} var_={v.var_pct} cvar_={v.cvar_pct} />)}
+                <CVarRow label="95% Hist"  var_={risk?.var_95_hist_pct} cvar_={risk?.cvar_95_hist_pct} />
+                <CVarRow label="95% C-F"   var_={risk?.var_95_cf_pct}   cvar_={risk?.cvar_95_cf_pct} />
+                <CVarRow label="99% Hist"  var_={risk?.var_99_hist_pct} cvar_={risk?.cvar_99_hist_pct} />
                 <div style={{ display:"flex",gap:24,flexWrap:"wrap",marginTop:18 }}>
                   <Metric label="Tail Ratio"   value={risk.tail_ratio?.toFixed(3)}    color={(risk.tail_ratio||0)>=1?GN:RD} sub="P95↑ / |P5↓|" />
                   <Metric label="CDaR 95%"     value={`${risk.cdar_95_pct?.toFixed(2)}%`} color={RD} sub="conditional drawdown at risk" />

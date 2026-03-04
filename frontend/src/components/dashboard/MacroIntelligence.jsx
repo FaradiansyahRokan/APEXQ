@@ -117,10 +117,10 @@ export function MacroIntelligence({ apexData }) {
               {Math.round(hmm_regime?.confidence || 0)}%
             </span>
           </div>
-          <Row label="Hurst"   value={`H=${(regime?.hurst_exponent || 0).toFixed(3)}`} />
-          <Row label="Persist" value={`${regime?.regime_persistence_days || 0}d`} />
-          <Row label="Vol 30D" value={`${(regime?.vol_30d_annualized || 0).toFixed(1)}%`}
-            color={(regime?.vol_30d_annualized || 0) > 40 ? 'var(--neg)' : 'var(--ink2)'} />
+          <Row label="Hurst"   value={`H=${(hmm_regime?.hurst_exponent || 0).toFixed(3)}`} />
+          <Row label="Persist" value={`${hmm_regime?.regime_persistence_days || 0}d`} />
+          <Row label="Vol 30D" value={`${(hmm_regime?.vol_30d_annualized || 0).toFixed(1)}%`}
+            color={(hmm_regime?.vol_30d_annualized || 0) > 40 ? 'var(--neg)' : 'var(--ink2)'} />
         </Panel>
 
         {/* Factor Alpha */}
@@ -207,9 +207,9 @@ export function MacroIntelligence({ apexData }) {
           }`} style={{ marginBottom: 12, display: 'inline-flex' }}>
             {zscore?.signal || 'NEUTRAL'}
           </span>
-          <Row label="VaR 95%"  value={`${(varcvar?.var_pct ?? 0).toFixed(3)}%`}  color="var(--neg)" />
-          <Row label="CVaR"     value={`${(varcvar?.cvar_pct ?? 0).toFixed(3)}%`} color="var(--neg)" />
-          <Row label="Method"   value={varcvar?.method || 'Historical'} />
+          <Row label="VaR 95%"  value={`${Math.abs(apexData?.quant?.var_95_cf_pct ?? 0).toFixed(3)}%`}  color="var(--neg)" />
+          <Row label="CVaR"     value={`${Math.abs(apexData?.quant?.cvar_95_cf_pct ?? 0).toFixed(3)}%`} color="var(--neg)" />
+          <Row label="Method"   value="Cornish-Fisher" />
         </Panel>
 
         {/* Kelly */}

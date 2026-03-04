@@ -190,42 +190,129 @@ export default function QuantumPortfolioSimulator() {
   const [tradeFilter, setTradeFilter] = useState("ALL");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [animKey, setAnimKey]       = useState(0);
-  const progressRef = useRef(null);
+  const progressRef  = useRef(null);
+  const readerRef    = useRef(null);   // fetch reader para cancel
+  const [simPhase, setSimPhase]       = useState(0);
+  const [simLog, setSimLog]           = useState([]);
+  const [liveTrades, setLiveTrades]   = useState(0);
+  const [liveBalance, setLiveBalance] = useState(0);
+  const [liveWins, setLiveWins]       = useState(0);
+  const [liveDD, setLiveDD]           = useState(0);
 
   const setCfg = (key, val) => setConfig(c => ({ ...c, [key]: val }));
+
+  // ── Phase definitions — driven by real SSE events from backend ──
+  const SIM_PHASES = [
+    { label: "FETCH",   long: "FETCHING DATA",        sub: "Pulling historical OHLCV from API — all tickers",       color: "#38bdf8" },
+    { label: "GATE",    long: "INITIALIZING ARMOR",   sub: "Equity Armor + 3-Layer gate setup",                     color: "#fbbf24" },
+    { label: "SIM",     long: "SIMULATING TRADES",    sub: "Kelly sizing — partial TP — equity armor enforcement",  color: "#34d399" },
+    { label: "METRICS", long: "COMPUTING METRICS",    sub: "Sharpe — Calmar — walk-forward validation — DSR",       color: "#f472b6" },
+  ];
+
+  const PHASE_IDX = { FETCH: 0, GATE: 1, SIM: 2, METRICS: 3 };
 
   const runSim = async () => {
     setIsRunning(true);
     setProgress(0);
     setResult(null);
     setAnimKey(k => k + 1);
+    setSimPhase(0);
+    setSimLog([]);
+    setLiveTrades(0);
+    setLiveBalance(config.initial_balance);
+    setLiveWins(0);
+    setLiveDD(0);
 
-    let p = 0;
-    progressRef.current = setInterval(() => {
-      p += Math.random() * 6 + 2;
-      if (p >= 95) { clearInterval(progressRef.current); p = 95; }
-      setProgress(Math.min(p, 95));
-    }, 100);
+    // Cleanup function untuk cancel stream kalau component unmount
+    const cleanup = () => {
+      if (readerRef.current) {
+        try { readerRef.current.cancel(); } catch (_) {}
+        readerRef.current = null;
+      }
+    };
 
     try {
-      const response = await fetch("http://localhost:8001/api/simulate", {
-        method: "POST",
+      const response = await fetch("http://localhost:8001/api/simulate/stream", {
+        method : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config)
+        body   : JSON.stringify(config),
       });
+
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "Simulation failed");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${response.status}`);
       }
-      const res = await response.json();
-      clearInterval(progressRef.current);
-      setProgress(100);
-      setResult(res);
+
+      const reader  = response.body.getReader();
+      readerRef.current = reader;
+      const decoder = new TextDecoder();
+      let   buf     = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        // SSE format: "data: <json>
+
+
+        const parts = buf.split("\n\n");
+        buf = parts.pop(); 
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch (_) { continue; }
+
+          switch (evt.type) {
+
+            case "phase":
+              setSimPhase(PHASE_IDX[evt.phase] ?? 0);
+              setProgress(evt.progress ?? 0);
+              break;
+
+            case "tick":
+              // Data 100% real dari backend loop
+              setProgress(evt.progress ?? 0);
+              if (evt.phase && PHASE_IDX[evt.phase] !== undefined)
+                setSimPhase(PHASE_IDX[evt.phase]);
+              setLiveBalance(evt.balance ?? config.initial_balance);
+              setLiveTrades(evt.trades ?? 0);
+              setLiveWins(evt.wins ?? 0);
+              setLiveDD(evt.dd_pct ?? 0);
+              if (evt.log) setSimLog(prev => [...prev.slice(-24), evt.log]);
+              break;
+
+            case "trade":
+              // Per-trade event — sudah terekam di tick wins/losses
+              // Kita tambahkan ke log stream sebagai info tambahan
+              if (evt.ticker) {
+                const sign = (evt.pnl_usd ?? 0) >= 0 ? "+" : "";
+                setSimLog(prev => [...prev.slice(-24), {
+                  tag : evt.outcome === "WIN" ? "WIN" : "LOSS",
+                  text: `${evt.ticker}  ${evt.direction}  pnl=${sign}$${(evt.pnl_usd??0).toFixed(2)}  bal=$${(evt.balance??0).toFixed(2)}`,
+                }]);
+              }
+              break;
+
+            case "done":
+              setProgress(100);
+              setSimPhase(SIM_PHASES.length - 1);
+              if (evt.report) setResult(evt.report);
+              break;
+
+            case "error":
+              throw new Error(evt.message || "Simulation error");
+          }
+        }
+      }
+
     } catch (error) {
       console.error("Simulation Error:", error);
-      clearInterval(progressRef.current);
       alert("Simulation Error: " + error.message);
     } finally {
+      cleanup();
       setIsRunning(false);
       setProgress(0);
     }
@@ -444,27 +531,249 @@ export default function QuantumPortfolioSimulator() {
         </div>
       )}
 
-      {/* ── LOADING STATE ── */}
-      {isRunning && (
-        <div className="anim card" style={{ padding: 56, textAlign: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-            <div style={{ position: 'relative', width: 52, height: 52 }}>
-              <div style={{ width: 52, height: 52, border: '2px solid var(--border2)', borderTopColor: 'var(--gold)', borderRadius: '50%' }} className="spin-icon" />
-              <div style={{ position: 'absolute', inset: 10, border: '1.5px solid var(--border)', borderTopColor: 'var(--green)', borderRadius: '50%', animationDuration: '0.5s' }} className="spin-icon" />
-            </div>
-            <div>
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink2)', letterSpacing: '0.08em', marginBottom: 12 }}>
-                Running 3-Layer Gate · Kelly Sizing · Simulating… {progress.toFixed(0)}%
-              </p>
-              <div style={{ width: 280, height: 4, background: 'var(--surface3)', borderRadius: 2, margin: '0 auto', overflow: 'hidden' }}>
-                <div style={{ width: `${progress}%`, height: '100%', background: 'var(--gold)', transition: 'width 0.1s' }} />
+      {/* ── LOADING STATE v3 — Clean Data Monitor ── */}
+      {isRunning && (() => {
+        const phase      = SIM_PHASES[Math.min(simPhase, SIM_PHASES.length - 1)];
+        const pct        = progress.toFixed(0);
+        const balanceDelta = liveBalance - config.initial_balance;
+        const isUp       = balanceDelta >= 0;
+        const winRate    = liveTrades > 0 ? (liveWins / liveTrades * 100) : 0;
+
+        return (
+          <div className="anim" style={{ marginBottom: 24 }}>
+
+            {/* ── Row 1: Phase header + progress bar ── */}
+            <div style={{
+              padding: '16px 20px 14px', marginBottom: 10,
+              background: 'var(--surface2)',
+              border: '1px solid var(--border)',
+              borderTop: `2px solid ${phase.color}`,
+              borderRadius: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+                {/* Left: phase label + sub */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+                    <div style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: phase.color,
+                      boxShadow: `0 0 8px ${phase.color}`,
+                      animation: 'pulse-dot 1.2s ease-in-out infinite',
+                    }} />
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, color: phase.color, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+                      {phase.long}
+                    </span>
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.04em', paddingLeft: 17 }}>
+                    {phase.sub}
+                  </div>
+                </div>
+                {/* Right: % + pip strip */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 900, color: 'var(--ink)', letterSpacing: '-0.04em', lineHeight: 1 }}>{pct}<span style={{ fontSize: 11, color: 'var(--ink3)', marginLeft: 1 }}>%</span></span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {SIM_PHASES.map((ph, i) => (
+                      <div key={i} title={ph.label} style={{
+                        height: 3,
+                        width: i === simPhase ? 24 : 10,
+                        borderRadius: 2,
+                        background: i < simPhase ? '#34d399' : i === simPhase ? ph.color : 'var(--border2)',
+                        transition: 'all 0.4s ease',
+                        boxShadow: i === simPhase ? `0 0 6px ${ph.color}88` : 'none',
+                      }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* Progress track */}
+              <div style={{ height: 2, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${progress}%`, height: '100%',
+                  background: phase.color,
+                  transition: 'width 0.15s ease',
+                  boxShadow: `0 0 6px ${phase.color}88`,
+                }} />
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── RESULTS ── */}
+            {/* ── Row 2: Stats left | Log right ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 10, marginBottom: 10 }}>
+
+              {/* Left: stat grid */}
+              <div style={{
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 16,
+              }}>
+                {/* Balance */}
+                <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 14 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 5 }}>Running Balance</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 24, fontWeight: 900, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums',
+                    color: isUp ? '#34d399' : '#f87171' }}>
+                    ${liveBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: isUp ? '#34d399' : '#f87171', marginTop: 3 }}>
+                    {isUp ? '+' : ''}{((balanceDelta / config.initial_balance) * 100).toFixed(2)}%
+                    <span style={{ color: 'var(--ink3)', marginLeft: 6 }}>vs ${config.initial_balance.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Trade count */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: '1px solid var(--border)', paddingBottom: 14 }}>
+                  {[
+                    { label: 'Trades', val: liveTrades, color: 'var(--ink)' },
+                    { label: 'Win Rate', val: liveTrades > 0 ? winRate.toFixed(1) + '%' : '--', color: winRate >= 50 ? '#34d399' : winRate > 0 ? '#f87171' : 'var(--ink3)' },
+                  ].map(({label, val, color}) => (
+                    <div key={label}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Drawdown */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>Max Drawdown</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)' }}>limit {config.circuit_breaker_dd}%</div>
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', marginBottom: 6,
+                    color: liveDD > 10 ? '#f87171' : liveDD > 5 ? '#fbbf24' : '#34d399' }}>
+                    -{liveDD.toFixed(2)}%
+                  </div>
+                  <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(liveDD / config.circuit_breaker_dd * 100, 100)}%`,
+                      height: '100%', borderRadius: 2,
+                      background: liveDD > 10 ? '#f87171' : liveDD > 5 ? '#fbbf24' : '#34d399',
+                      transition: 'width 0.4s, background 0.4s',
+                    }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: log stream */}
+              <div style={{
+                background: '#080c10', border: '1px solid #1a2332',
+                borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+              }}>
+                {/* Log header — clean, no traffic dots */}
+                <div style={{
+                  padding: '9px 16px', borderBottom: '1px solid #1a2332',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#0d1117',
+                }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#4a5568', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+                    apex_engine  /  stdout
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#34d399', animation: 'pulse-dot 1.4s ease-in-out infinite' }} />
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: '#34d399', letterSpacing: '0.1em' }}>RUNNING</span>
+                  </div>
+                </div>
+
+                {/* Log body */}
+                <div style={{ flex: 1, padding: '10px 0', overflowY: 'auto', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  {simLog.length === 0 && (
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#2a3a4a', padding: '0 16px' }}>
+                      initializing apex engine...
+                    </div>
+                  )}
+                  {simLog.map((entry, i) => {
+                    const isLast = i === simLog.length - 1;
+                    const tag    = entry.tag || 'INFO';
+                    const tagColors = {
+                      WIN:    { tag: '#34d399', text: '#a7f3d0' },
+                      LOSS:   { tag: '#f87171', text: '#fca5a5' },
+                      ARMOR:  { tag: '#fbbf24', text: '#fde68a' },
+                      GATE:   { tag: '#a78bfa', text: '#c4b5fd' },
+                      SCREEN: { tag: '#38bdf8', text: '#7dd3fc' },
+                      DATA:   { tag: '#4a5568', text: '#718096' },
+                    };
+                    const colors = tagColors[tag] || { tag: '#4a5568', text: '#718096' };
+                    const rowOpacity = 0.35 + (i / Math.max(simLog.length - 1, 1)) * 0.65;
+
+                    return (
+                      <div key={i} style={{
+                        display: 'grid', gridTemplateColumns: '28px 52px 1fr',
+                        alignItems: 'baseline', gap: 0,
+                        padding: '2px 16px',
+                        opacity: rowOpacity,
+                        background: isLast ? 'rgba(255,255,255,0.02)' : 'transparent',
+                        borderLeft: isLast ? `2px solid ${phase.color}44` : '2px solid transparent',
+                      }}>
+                        {/* Line number */}
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: '#2a3a4a', userSelect: 'none' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        {/* Tag */}
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 7, fontWeight: 700, letterSpacing: '0.08em',
+                          color: colors.tag, textTransform: 'uppercase',
+                        }}>
+                          [{tag}]
+                        </span>
+                        {/* Text */}
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 9, color: colors.text,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          letterSpacing: '0.01em',
+                        }}>
+                          {entry.text}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {/* Blinking cursor on last line */}
+                  <div style={{ padding: '2px 16px', fontFamily: 'var(--mono)', fontSize: 9 }}>
+                    <span style={{ color: phase.color, animation: 'blink-cursor 0.9s step-end infinite' }}>_</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Row 3: Phase timeline — text-only, no icons ── */}
+            <div style={{
+              display: 'flex', alignItems: 'stretch',
+              background: 'var(--surface2)', border: '1px solid var(--border)',
+              borderRadius: 10, overflow: 'hidden',
+            }}>
+              {SIM_PHASES.map((ph, i) => {
+                const done    = i < simPhase;
+                const active  = i === simPhase;
+                const pending = i > simPhase;
+                return (
+                  <div key={i} style={{
+                    flex: 1, padding: '10px 14px',
+                    borderRight: i < SIM_PHASES.length - 1 ? '1px solid var(--border)' : 'none',
+                    background: active ? `${ph.color}0d` : 'transparent',
+                    borderTop: active ? `2px solid ${ph.color}` : '2px solid transparent',
+                    transition: 'all 0.3s',
+                    opacity: pending ? 0.35 : 1,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 7, fontWeight: 700,
+                        color: done ? '#34d399' : active ? ph.color : 'var(--ink3)',
+                        letterSpacing: '0.12em', textTransform: 'uppercase',
+                      }}>
+                        {ph.label}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 7,
+                        color: done ? '#34d399' : active ? ph.color : 'var(--border2)' }}>
+                        {done ? 'done' : active ? 'running' : '...'}
+                      </span>
+                    </div>
+                    <div style={{ height: 1, background: done ? '#34d39944' : active ? `${ph.color}44` : 'var(--border)', borderRadius: 1, transition: 'background 0.4s' }} />
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        );
+      })()}
+
+            {/* ── RESULTS ── */}
       {result && !isRunning && (
         <div key={animKey} className="anim d2">
 
@@ -1016,6 +1325,18 @@ export default function QuantumPortfolioSimulator() {
       <style>{`
         .spin-icon { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse-dot {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.4; transform: scale(0.7); }
+        }
+        @keyframes blink-cursor {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0; }
+        }
+        @keyframes slide-in-log {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
   );

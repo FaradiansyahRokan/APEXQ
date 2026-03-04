@@ -1487,6 +1487,10 @@ class EquityArmor:
             },
         }
 
+    @property
+    def current_balance(self) -> float:
+        return self._current_balance
+
     def record_trade(self, pnl_usd: float, is_win: bool, date: str = "") -> Dict:
         """Record completed trade. Updates edge monitor + compounding model."""
         self._trade_count += 1

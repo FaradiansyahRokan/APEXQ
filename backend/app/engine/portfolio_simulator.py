@@ -131,12 +131,17 @@ from scipy.stats import norm, t as t_dist, binom
 import warnings
 import time
 
-# ── APEX Engine Imports ──
-from app.engine.screener_engine import score_ticker_from_df
-from app.engine.regime_engine import detect_hmm_regime, get_full_regime_analysis
-from app.engine.ict_engine import get_ict_full_analysis
-from app.engine.quant_engine import calculate_technicals
-from app.engine.macro_engine import get_cross_asset_data
+# ── APEX Engine v6 Consolidated Import ──
+from app.engine.apex_engine_v6 import (
+    score_ticker_from_df,
+    detect_hmm_regime,
+    get_ict_full_analysis,
+    calculate_technicals,  
+)
+
+# ── Crypto Data Collectors ──
+from app.collectors.hyperliquid_collector import get_hl_klines
+from app.collectors.market_collector import get_binance_crypto_data
 
 warnings.filterwarnings("ignore")
 
@@ -214,6 +219,11 @@ class SimulationConfig:
     circuit_breaker_dd : float = 15.0      # Circuit breaker pada DD% dari initial
     # ── v4.0 Additions ──────────────────────────────
     scan_interval_days : int   = 3         # v4: scan setiap 3 hari (sebelumnya 7)
+    # ── v5.0 Additions ──────────────────────────────
+    use_equity_armor   : bool  = True      # [v5] Integrasikan EquityArmor ke simulation loop
+    use_multi_timeframe: bool  = True      # [v5] Gunakan sinyal 4H/1H untuk tambahan konfirmasi
+    mtf_min_alignment  : int   = 1         # [v5] Min timeframe yang harus aligned (dari 3: daily/4H/1H)
+    slippage_pct       : float = 0.05      # [v5] Slippage 0.05% dari entry (realistic retail)
 
 
 @dataclass
@@ -241,6 +251,10 @@ class SimulationResult:
     expectancy_usd     : float = 0.0
     trades_filtered    : int   = 0         # Berapa trade yang diblokir gate
     kelly_avg_fraction : float = 0.0       # Rata-rata Kelly fraction dipakai
+    sim_start_date     : str   = ""        # [v5 FIX] Equity curve anchor
+    armor_events       : List[Dict] = field(default_factory=list)  # [v5] Armor decisions log
+    mtf_filtered       : int   = 0         # [v5] Trade diblokir karena MTF misalignment
+    slippage_total_usd : float = 0.0       # [v5] Total realistic slippage cost
 
 
 @dataclass
@@ -264,103 +278,75 @@ class WalkForwardResult:
 # ══════════════════════════════════════════════════════════════════
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  SECTION 5 — SCREENER (EXPANDED WATCHLISTS)
+#  SECTION 5 — DYNAMIC UNIVERSE (Auto-fetched from live APIs)
 # ═════════════════════════════════════════════════════════════════════════════
+#
+#  Watchlist sekarang dibangun secara OTOMATIS dari:
+#    • Crypto  → Binance /ticker/24hr (sorted by USD volume)
+#                + Hyperliquid perp markets (double confirmation)
+#    • US Stock → S&P 500 + Nasdaq 100 via Wikipedia, screened by turnover
+#    • IDX     → IDX official API, sorted by market cap + trading frequency
+#
+#  Features:
+#    ✅ Zero manual input — auto-discover top liquid tickers
+#    ✅ Auto-remove delisted / dead-volume assets
+#    ✅ TTL cache 6 jam — tidak spam API setiap scan
+#    ✅ Fallback ke hardcoded list jika semua API mati
+#
+#  Untuk override manual (misal testing), set env var:
+#    APEX_USE_STATIC_UNIVERSE=1  → pakai fallback hardcoded di bawah
+# ─────────────────────────────────────────────────────────────────────────────
 
-WATCHLISTS = {
-    # ─── INDONESIA (IDX) ─────────────────────────────────────────────────────
-    "IDX_BLUECHIP": [
-        "BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", 
-        "ASII.JK", "UNVR.JK", "ICBP.JK", "INDF.JK", "KLBF.JK",
-        "ADRO.JK", "PTBA.JK", "UNTR.JK", "ITMG.JK", "PGAS.JK",
-        "MDKA.JK", "ANTM.JK", "INKP.JK", "SMGR.JK", "CPIN.JK"
-    ],
-    "IDX_TECH_DIGITAL": [
-        "GOTO.JK", "ARTO.JK", "BUKA.JK", "EMTK.JK", "DCII.JK", 
-        "MTDL.JK", "WIRG.JK", "BELI.JK"
-    ],
-    "IDX_SECOND_LINER": [
-        "BRIS.JK", "AMRT.JK", "MAPI.JK", "ACES.JK", "ERAA.JK",
-        "MYOR.JK", "JPFA.JK", "MEDC.JK", "AKRA.JK", "EXCL.JK",
-        "ISAT.JK", "TINS.JK", "BRMS.JK", "ESSA.JK", "HRUM.JK"
-    ],
-    # Saham Volatilitas Tinggi / "Gorengan" / High Beta (High Risk)
-    "IDX_GORENGAN_HIGH_VOL": [
-        "BREN.JK", "CUAN.JK", "TPIA.JK", "BRPT.JK", "PGEO.JK", # Prajogo Group (Volatile)
-        "PTMP.JK", "STRK.JK", "FWCT.JK", "GTRA.JK", "VKTR.JK",
-        "DOID.JK", "DEWA.JK", "BUMI.JK", "ENRG.JK", "PSAB.JK"
-    ],
+try:
+    from app.collectors.dynamic_universe import build_dynamic_watchlists, UniverseRefreshScheduler
 
-    # ─── UNITED STATES (US) ──────────────────────────────────────────────────
-    "US_MAG7_TECH": [
-        "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"
-    ],
-    "US_SEMICONDUCTOR": [
-        "AMD", "AVGO", "TSM", "QCOM", "INTC", "MU", "ARM", "SMCI", "LRCX", "AMAT"
-    ],
-    "US_GROWTH_SAAS": [
-        "CRM", "PLTR", "SNOW", "CRWD", "PANW", "ADBE", "NFLX", 
-        "SHOP", "SQ", "PYPL", "NET", "DDOG"
-    ],
-    "US_CRYPTO_PROXY": [
-        "MSTR", "COIN", "MARA", "RIOT", "CLSK", "HOOD"
-    ],
+    # Cek apakah user minta static universe (untuk testing/offline)
+    import os
+    _use_static = os.environ.get("APEX_USE_STATIC_UNIVERSE", "0") == "1"
 
-    # ─── CRYPTO (Major, L1, L2, Meme) ────────────────────────────────────────
-    "CRYPTO_MAJOR": [
-        "BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD"
-    ],
-    "CRYPTO_L1_ALT": [
-        "ADA-USD", "AVAX-USD", "DOT-USD", "TRX-USD", "LINK-USD",
-        "NEAR-USD", "ATOM-USD", "ICP-USD", "APT-USD", "SUI-USD",
-        "SEI-USD", "INJ-USD", "KAS-USD", "FTM-USD", "ALGO-USD"
-    ],
-    "CRYPTO_L2_SCALING": [
-        "MATIC-USD", "ARB-USD", "OP-USD", "IMX-USD", "MNT-USD",
-        "STX-USD", "LRC-USD", "METIS-USD", "SKL-USD"
-    ],
-    "CRYPTO_AI_DEPIN": [
-        "RNDR-USD", "FET-USD", "TAO-USD", "AGIX-USD", "WLD-USD",
-        "FIL-USD", "AR-USD", "GRT-USD", "THETA-USD"
-    ],
-    # Crypto "Gorengan" (Memecoins & High Volatility)
-    "CRYPTO_MEME_GORENGAN": [
-        "DOGE-USD", "SHIB-USD", "PEPE-USD", "WIF-USD", "FLOKI-USD",
-        "BONK-USD", "BOME-USD", "MEME-USD", "ORDI-USD", "SATS-USD"
-    ]
-}
+    if _use_static:
+        print("⚠️  [UNIVERSE] APEX_USE_STATIC_UNIVERSE=1 — using hardcoded fallback")
+        raise ImportError("Forced static mode")
 
-# Gabungkan list agar bisa dipanggil per Region besar
-WATCHLISTS["IDX"] = (
-    WATCHLISTS["IDX_BLUECHIP"] + 
-    WATCHLISTS["IDX_TECH_DIGITAL"] + 
-    WATCHLISTS["IDX_SECOND_LINER"] + 
-    WATCHLISTS["IDX_GORENGAN_HIGH_VOL"]
-)
+    # Build dynamic universe (auto-cached, hanya hit API sekali per 6 jam)
+    WATCHLISTS = build_dynamic_watchlists(
+        include_crypto  = True,
+        include_us      = True,
+        include_idx     = True,
+        crypto_top_n    = 25,   # Top 25 crypto per category by volume
+        us_top_n        = 60,   # Top 60 US stocks by turnover (vol × price)
+        idx_top_n       = 50,   # Top 50 IDX stocks by market cap + freq
+        min_crypto_vol  = 5_000_000,  # Min $5M/day volume untuk crypto
+        verbose         = True,
+    )
+    print(f"✅ [UNIVERSE] Dynamic universe loaded: {sum(len(v) for v in WATCHLISTS.values())} total ticker-slots")
 
-WATCHLISTS["US"] = (
-    WATCHLISTS["US_MAG7_TECH"] + 
-    WATCHLISTS["US_SEMICONDUCTOR"] + 
-    WATCHLISTS["US_GROWTH_SAAS"] + 
-    WATCHLISTS["US_CRYPTO_PROXY"]
-)
+    # Optional: pasang scheduler untuk auto-refresh background (uncomment jika perlu)
+    # _universe_scheduler = UniverseRefreshScheduler(refresh_hours=6)
 
-WATCHLISTS["CRYPTO"] = (
-    WATCHLISTS["CRYPTO_MAJOR"] + 
-    WATCHLISTS["CRYPTO_L1_ALT"] + 
-    WATCHLISTS["CRYPTO_L2_SCALING"] + 
-    WATCHLISTS["CRYPTO_AI_DEPIN"] + 
-    WATCHLISTS["CRYPTO_MEME_GORENGAN"]
-)
+except Exception as _universe_err:
+    print(f"⚠️  [UNIVERSE] Dynamic fetch failed ({_universe_err}). Using static fallback.")
 
-# List campuran untuk monitoring cepat
-WATCHLISTS["UNIVERSAL"] = (
-    WATCHLISTS["US_MAG7_TECH"] + 
-    WATCHLISTS["IDX_BLUECHIP"][:5] + 
-    WATCHLISTS["IDX_GORENGAN_HIGH_VOL"][:3] +
-    WATCHLISTS["CRYPTO_MAJOR"] +
-    WATCHLISTS["CRYPTO_MEME_GORENGAN"][:3]
-)
+    # ── STATIC FALLBACK (jika API mati / offline mode) ────────────────────
+    # List ini dipertahankan sebagai safety net, tapi TIDAK dipakai saat API up.
+    WATCHLISTS = {
+        "IDX_BLUECHIP"    : ["BBCA.JK","BBRI.JK","BMRI.JK","BBNI.JK","TLKM.JK",
+                              "ASII.JK","UNVR.JK","ICBP.JK","ADRO.JK","PTBA.JK"],
+        "IDX_TECH_DIGITAL": ["GOTO.JK","ARTO.JK","BUKA.JK","EMTK.JK","DCII.JK"],
+        "IDX_ENERGY"      : ["ADRO.JK","PTBA.JK","ITMG.JK","PGAS.JK","MEDC.JK"],
+        "US_MAG7_TECH"    : ["AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA"],
+        "US_SEMICONDUCTOR": ["AMD","AVGO","TSM","QCOM","MU","LRCX","AMAT"],
+        "US_GROWTH_SAAS"  : ["CRM","PLTR","CRWD","PANW","ADBE","NFLX","NET","DDOG"],
+        "US_CRYPTO_PROXY" : ["MSTR","COIN","MARA","RIOT","HOOD"],
+        "CRYPTO_MAJOR"    : ["BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD"],
+        "CRYPTO_L1_ALT"   : ["ADA-USD","AVAX-USD","LINK-USD","APT-USD","SUI-USD",
+                              "INJ-USD","NEAR-USD","DOT-USD"],
+        "CRYPTO_MEME"     : ["DOGE-USD","SHIB-USD","PEPE-USD","WIF-USD","FLOKI-USD"],
+    }
+    WATCHLISTS["IDX"]      = WATCHLISTS["IDX_BLUECHIP"] + WATCHLISTS["IDX_TECH_DIGITAL"] + WATCHLISTS["IDX_ENERGY"]
+    WATCHLISTS["US"]       = WATCHLISTS["US_MAG7_TECH"] + WATCHLISTS["US_SEMICONDUCTOR"] + WATCHLISTS["US_GROWTH_SAAS"] + WATCHLISTS["US_CRYPTO_PROXY"]
+    WATCHLISTS["CRYPTO"]   = WATCHLISTS["CRYPTO_MAJOR"] + WATCHLISTS["CRYPTO_L1_ALT"] + WATCHLISTS["CRYPTO_MEME"]
+    WATCHLISTS["UNIVERSAL"]= WATCHLISTS["US_MAG7_TECH"][:5] + WATCHLISTS["IDX_BLUECHIP"][:5] + WATCHLISTS["CRYPTO_MAJOR"]
 
 # ICT strength tier ordering (untuk comparison)
 _ICT_STRENGTH_ORDER = {"VERY_WEAK": 0, "WEAK": 1, "MODERATE": 2, "STRONG": 3, "VERY_STRONG": 4}
@@ -415,9 +401,61 @@ def _normalize_ict_strength(raw_strength) -> str:
 # ══════════════════════════════════════════════════════════════════
 
 def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optional[pd.DataFrame]:
+    """
+    v4.1: Multi-source data fetcher with Crypto Priority.
+    Prioritas: Hyperliquid -> Binance -> yfinance (fallback)
+    """
+    is_crypto = ticker.endswith("-USD") or ticker.endswith("USDT")
+    df = None
+
+    if is_crypto:
+        # ── 1. HYPERLIQUID (L1 Data) ─────────────────────────────
+        try:
+            # Hitung lookback_days dari sekarang s/d start
+            lookback_days = (datetime.now() - start).days + 2
+            clean_coin = ticker.replace("-USD", "").replace("USDT", "").upper()
+            
+            print(f"🔄 [SIMULATOR] Fetching {ticker} from Hyperliquid (Lookback: {lookback_days} days)...")
+            df_hl = get_hl_klines(clean_coin, interval="1d", lookback_days=lookback_days)
+            
+            if df_hl is not None and not df_hl.empty:
+                # Filter range yang diminta user
+                df_filtered = df_hl[(df_hl.index >= start) & (df_hl.index <= end)]
+                if len(df_filtered) > 10:  # Minimal ada data yang cukup
+                    print(f"✅ [SIMULATOR] {ticker} data fetched from Hyperliquid L1.")
+                    return df_filtered.dropna(subset=["Close"])
+        except Exception as e:
+            print(f"⚠️ Hyperliquid fetch error for {ticker}: {e}")
+
+        # ── 2. BINANCE (API) ─────────────────────────────────────
+        try:
+            print(f"🔄 [SIMULATOR] Fetching {ticker} from Binance...")
+            # get_binance_crypto_data sudah punya internal filter limit=300
+            df_bn, _, _, _ = get_binance_crypto_data(ticker, tf="1D")
+            
+            if df_bn is not None and not df_bn.empty:
+                # Strip timezone if any for index comparison
+                if df_bn.index.tz is not None:
+                    df_bn.index = df_bn.index.tz_localize(None)
+                    
+                df_filtered = df_bn[(df_bn.index >= start) & (df_bn.index <= end)]
+                if len(df_filtered) > 10:
+                    print(f"✅ [SIMULATOR] {ticker} data fetched from Binance API.")
+                    return df_filtered.dropna(subset=["Close"])
+        except Exception as e:
+            print(f"⚠️ Binance fetch error for {ticker}: {e}")
+
+        # ── Crypto: kedua sumber gagal → return None (jangan pakai yfinance) ──
+        # yfinance tidak support format -USD untuk crypto perpetual dengan baik.
+        print(f"❌ [SIMULATOR] {ticker}: Hyperliquid & Binance both failed. Skipping.")
+        return None
+
+    # ── 3. YFINANCE (Stocks & ETFs only — crypto TIDAK sampai sini) ─
     for attempt in range(3):
         try:
-            time.sleep(0.15)
+            if attempt > 0: time.sleep(0.5)
+            print(f"🔄 [SIMULATOR] Fetching {ticker} from yfinance (Attempt {attempt+1})...")
+            
             df = yf.download(
                 ticker,
                 start=start.strftime("%Y-%m-%d"),
@@ -426,17 +464,24 @@ def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optio
                 progress=False,
                 auto_adjust=True
             )
+            
             if df is None or df.empty:
                 continue
+                
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
+                
             required_cols = {"Open", "High", "Low", "Close", "Volume"}
             if not required_cols.issubset(df.columns):
                 continue
+                
+            print(f"✅ [SIMULATOR] {ticker} data fetched from yfinance.")
             return df.dropna(subset=["Close"])
-        except Exception:
-            time.sleep(0.5)
+            
+        except Exception as e:
+            print(f"⚠️ yfinance fetch error for {ticker}: {e}")
             continue
+            
     return None
 
 
@@ -697,6 +742,97 @@ def _compute_quality_score_v4(
     return quality, breakdown
 
 
+def _analyze_multi_timeframe(
+    full_df   : pd.DataFrame,
+    scan_date : datetime,
+    direction : str,
+) -> Dict:
+    """
+    v5.0: Multi-Timeframe (MTF) Confluence Analysis.
+
+    Strategi entry di daily yang dikonfirmasi oleh:
+      - 4H timeframe: Trend structure + EMA alignment  
+      - 1H timeframe: Momentum + Entry timing
+
+    Dari daily OHLCV data, kita simulate 4H dan 1H dengan resampling.
+
+    Returns:
+        tf_aligned      : int   — jumlah timeframe yang aligned (0-3)
+        daily_aligned   : bool  — Daily EMA aligned dengan direction
+        h4_aligned      : bool  — 4H-equivalent aligned
+        h1_aligned      : bool  — 1H-equivalent aligned
+        mtf_score       : float — 0.0 - 1.0 (fraction aligned)
+        mtf_label       : str   — FULL_CONFLUENCE / PARTIAL / DIVERGENT
+        trade_freq_boost: float — size multiplier dari confluence strength
+    """
+    df = full_df[full_df.index <= scan_date].copy()
+
+    if len(df) < 30:
+        return {
+            "tf_aligned": 1, "daily_aligned": True,
+            "h4_aligned": False, "h1_aligned": False,
+            "mtf_score": 0.33, "mtf_label": "INSUFFICIENT_DATA",
+            "trade_freq_boost": 1.0,
+        }
+
+    close = df["Close"].astype(float)
+    cur   = float(close.iloc[-1])
+
+    # ── D1: EMA20 > EMA50 alignment ──────────────────────────────────
+    ema20_d = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+    ema50_d = float(close.ewm(span=50, adjust=False).mean().iloc[-1])
+    daily_aligned = (cur > ema20_d > ema50_d) if direction == "LONG" else (cur < ema20_d < ema50_d)
+
+    # ── 4H proxy: EMA5 > EMA10 + 5-day ROC ──────────────────────────
+    ema5_d  = float(close.ewm(span=5, adjust=False).mean().iloc[-1])
+    ema10_d = float(close.ewm(span=10, adjust=False).mean().iloc[-1])
+    h4_ema_ok = (cur > ema5_d > ema10_d) if direction == "LONG" else (cur < ema5_d < ema10_d)
+    roc5 = float((close.iloc[-1] - close.iloc[-6]) / close.iloc[-6] * 100) if len(close) > 6 else 0.0
+    h4_momentum_ok = (roc5 > 0.2) if direction == "LONG" else (roc5 < -0.2)
+    h4_aligned = h4_ema_ok and h4_momentum_ok
+
+    # ── 1H proxy: 3-day slope + last candle direction ─────────────────
+    if len(close) >= 4:
+        recent_slope = float(close.iloc[-1] - close.iloc[-4])
+        slope_ok = (recent_slope > 0) if direction == "LONG" else (recent_slope < 0)
+        if "Open" in df.columns:
+            last_bull = float(df["Close"].iloc[-1]) > float(df["Open"].iloc[-1])
+            candle_ok = last_bull if direction == "LONG" else not last_bull
+        else:
+            candle_ok = True
+        h1_aligned = slope_ok and candle_ok
+    else:
+        h1_aligned = True
+
+    # ── MTF Scoring ───────────────────────────────────────────────────
+    tf_aligned = sum([daily_aligned, h4_aligned, h1_aligned])
+    mtf_score  = tf_aligned / 3.0
+
+    if tf_aligned == 3:
+        mtf_label = "FULL_CONFLUENCE"
+        trade_freq_boost = 1.25
+    elif tf_aligned == 2:
+        mtf_label = "PARTIAL_CONFLUENCE"
+        trade_freq_boost = 1.0
+    elif tf_aligned == 1:
+        mtf_label = "WEAK_CONFLUENCE"
+        trade_freq_boost = 0.75
+    else:
+        mtf_label = "DIVERGENT"
+        trade_freq_boost = 0.0   # Block trade — semua TF berlawanan
+
+    return {
+        "tf_aligned"        : tf_aligned,
+        "daily_aligned"     : daily_aligned,
+        "h4_aligned"        : h4_aligned,
+        "h1_aligned"        : h1_aligned,
+        "mtf_score"         : round(mtf_score, 3),
+        "mtf_label"         : mtf_label,
+        "trade_freq_boost"  : trade_freq_boost,
+        "h4_roc5"           : round(roc5, 3),
+    }
+
+
 # ── Keep v3 name as alias so existing call sites work ──────────────
 def _compute_quality_score_v3(
     score: float, regime_conf: float, ict_signal: Dict, tech: Dict, direction: str
@@ -797,10 +933,27 @@ def _find_entry_signal(df_slice: pd.DataFrame, config: SimulationConfig) -> Opti
     return None
 
 
-def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) -> Optional[Dict]:
+def _find_entry_signal_soft(
+    df_slice   : pd.DataFrame,
+    config     : SimulationConfig,
+    df_future  : Optional[pd.DataFrame] = None,   # [FIX v5] untuk ambil next-open
+) -> Optional[Dict]:
     """
-    v3 SOFT: Hanya blokir NEUTRAL. Semua bias valid masuk.
-    Tambahkan tech data dan dynamic TP multiplier ke dalam signal dict.
+    v5 LOOK-AHEAD FIX: Entry price = Open hari berikutnya, bukan Close hari scan.
+
+    Root cause bug lama:
+      entry = Close[-1] pada scan_date → kamu tidak bisa masuk di exact close
+      setelah market tutup. Realistic entry = Open candle hari berikutnya.
+
+    Dampak: Close-to-Open gap bisa +/- 0.5% hingga 3% pada saham volatile.
+    Dengan 160 trades, ini bisa inflate/deflate return 5-15% total.
+
+    Fix:
+      - Sinyal masih di-generate dari df_slice (data historis s/d scan date)
+        → TIDAK ada look-ahead, karena hanya data masa lalu yang dipakai
+      - Entry price = Open[0] dari df_future (candle pertama setelah scan date)
+        → Ini harga realistis yang bisa kamu eksekusi
+      - SL dan TP dihitung ulang dari entry_actual (bukan dari close[-1])
     """
     ict      = get_ict_full_analysis(df_slice)
     bias     = ict.get("composite_bias", "NEUTRAL")
@@ -809,7 +962,21 @@ def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) ->
     if bias == "NEUTRAL":
         return None
 
-    close   = float(df_slice["Close"].iloc[-1])
+    # ── [FIX v5] Gunakan next-open sebagai entry price ─────────────────
+    # Jika df_future tersedia dan ada data, ambil Open candle pertama.
+    # Fallback ke Close[-1] jika belum ada data future (untuk compatibility).
+    close_last = float(df_slice["Close"].iloc[-1])
+
+    if df_future is not None and not df_future.empty and "Open" in df_future.columns:
+        next_open = float(df_future["Open"].iloc[0])
+        # Sanity check: next open tidak boleh > 20% dari close (data error / split)
+        if abs(next_open - close_last) / max(close_last, 1e-6) < 0.20:
+            entry_price = next_open
+        else:
+            entry_price = close_last   # Fallback jika anomali
+    else:
+        entry_price = close_last       # Fallback jika df_future belum tersedia
+
     atr     = _calculate_atr(df_slice, period=14)
     sl_dist = atr * config.sl_atr_mult
 
@@ -822,19 +989,21 @@ def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) ->
     tp_mult  = _compute_dynamic_tp_multiplier(tech, {"strength": strength}, direction)
     tp_dist  = sl_dist * config.tp_rr_ratio * tp_mult
 
-    # v3: Dynamic SL — tighten if RSI extreme or vol high
+    # v3: Dynamic SL — tighten/widen based on ATR regime
     atr_pct = tech.get("atr_percentile", 50.0)
-    if atr_pct > 80:     sl_mult = 1.2   # High vol → wider SL
-    elif atr_pct < 25:   sl_mult = 0.9   # Low vol → tighter SL
+    if atr_pct > 80:     sl_mult = 1.2
+    elif atr_pct < 25:   sl_mult = 0.9
     else:                sl_mult = 1.0
     sl_dist_adj = sl_dist * sl_mult
 
+    # [FIX v5] SL dan TP dihitung dari entry_price (next open), bukan dari close_last
     if direction == "LONG":
         return {
             "direction"      : "LONG",
-            "entry"          : close,
-            "sl"             : round(close - sl_dist_adj, 6),
-            "tp"             : round(close + tp_dist, 6),
+            "entry"          : entry_price,
+            "entry_ref_close": close_last,     # Simpan close referensi untuk audit
+            "sl"             : round(entry_price - sl_dist_adj, 6),
+            "tp"             : round(entry_price + tp_dist, 6),
             "atr"            : round(atr, 6),
             "strength"       : strength,
             "setup"          : f"ICT_{strength}_BULLISH",
@@ -842,14 +1011,16 @@ def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) ->
             "sl_multiplier"  : round(sl_mult, 2),
             "bullish_factors": ict.get("bullish_factors", 0),
             "bearish_factors": ict.get("bearish_factors", 0),
-            "tech"           : tech,    # Passed for quality scoring
+            "tech"           : tech,
+            "entry_type"     : "NEXT_OPEN" if entry_price != close_last else "CLOSE_FALLBACK",
         }
     else:
         return {
             "direction"      : "SHORT",
-            "entry"          : close,
-            "sl"             : round(close + sl_dist_adj, 6),
-            "tp"             : round(close - tp_dist, 6),
+            "entry"          : entry_price,
+            "entry_ref_close": close_last,
+            "sl"             : round(entry_price + sl_dist_adj, 6),
+            "tp"             : round(entry_price - tp_dist, 6),
             "atr"            : round(atr, 6),
             "strength"       : strength,
             "setup"          : f"ICT_{strength}_BEARISH",
@@ -858,6 +1029,7 @@ def _find_entry_signal_soft(df_slice: pd.DataFrame, config: SimulationConfig) ->
             "bullish_factors": ict.get("bullish_factors", 0),
             "bearish_factors": ict.get("bearish_factors", 0),
             "tech"           : tech,
+            "entry_type"     : "NEXT_OPEN" if entry_price != close_last else "CLOSE_FALLBACK",
         }
 
 
@@ -921,8 +1093,6 @@ def _compute_adaptive_kelly(
     # Apply consecutive loss guard on top
     if consec_losses >= config.consec_loss_guard:
         kelly_scaled_risk *= config.consec_loss_scale
-        print(f"   ⚠️  CONSEC LOSS GUARD: {consec_losses} losses → size scaled to "
-              f"{config.consec_loss_scale*100:.0f}%")
 
     return round(kelly_scaled_risk, 4), round(config.kelly_fraction, 4)
 
@@ -1540,41 +1710,68 @@ def run_walk_forward_validation(
 #  MASTER SIMULATION RUNNER v2.0
 # ══════════════════════════════════════════════════════════════════
 
+
 def run_simulation(config: SimulationConfig) -> SimulationResult:
     """
-    ╔══════════════════════════════════════════════════════════════╗
-    ║  MASTER ENTRY POINT — Quantum Portfolio Simulator v2.0      ║
-    ╠══════════════════════════════════════════════════════════════╣
-    ║  Pipeline per-minggu:                                        ║
-    ║  1. SCREENER   → Ambil top N ticker dengan skor ≥ threshold  ║
-    ║  2. GATE L1    → Screener score pass?                        ║
-    ║  3. GATE L2    → HMM Regime confidence ≥ min_regime_conf?    ║
-    ║  4. GATE L3    → ICT bias strength ≥ min_ict_strength?       ║
-    ║  5. SIZE CALC  → Kelly-adaptive risk + regime scaling        ║
-    ║  6. SIMULATE   → Forward sim dengan partial TP + BE logic    ║
-    ║  7. ANALYTICS  → Daily equity curve + correct Sharpe         ║
-    ╚══════════════════════════════════════════════════════════════╝
+    v5.0: Look-ahead fix + Equity Armor integration + Multi-Timeframe + Slippage.
+    See module docstring at top of file for full changelog.
     """
-    result   = SimulationResult(config=config)
-    balance  = config.initial_balance
-    trade_id = 0
-    trades_filtered = 0
-
     end_date   = datetime.now() - timedelta(days=1)
     start_date = end_date - timedelta(days=365 * config.lookback_years)
     tickers    = WATCHLISTS.get(config.scan_universe, WATCHLISTS["US"])
 
-    print(f"\n{'═'*65}")
-    print(f"  QUANTUM PORTFOLIO SIMULATOR v2.0")
-    print(f"  Universe  : {config.scan_universe} ({len(tickers)} tickers)")
-    print(f"  Period    : {start_date.date()} → {end_date.date()}")
-    print(f"  Capital   : ${config.initial_balance:,.2f}")
-    print(f"  Risk/Trade: {config.risk_per_trade}% (adaptive Kelly: {config.use_adaptive_kelly})")
-    print(f"  Min Score : {config.min_screener_score} | Min ICT: {config.min_ict_strength}")
-    print(f"  Regime Min Conf: {config.min_regime_conf}%")
-    print(f"{'═'*65}")
+    result                = SimulationResult(config=config)
+    result.sim_start_date = start_date.strftime("%Y-%m-%d")
+    balance               = config.initial_balance
+    trade_id              = 0
+    trades_filtered       = 0
+    mtf_filtered          = 0
+    total_slippage_usd    = 0.0
 
-    # ── Pre-fetch all data ────────────────────────────────────────
+    # [v5] Initialize EquityArmor
+    armor = None
+    if config.use_equity_armor:
+        try:
+            from app.engine.apex_equity_armor import EquityArmor, ArmorConfig
+            armor_cfg = ArmorConfig(
+                initial_balance           = config.initial_balance,
+                trailing_stop_pct         = 0.15,
+                trailing_warning_pct      = 0.08,
+                target_vol_ann            = 0.15,
+                max_vol_ann               = 0.50,
+                eq_fast_ma                = 10,
+                eq_slow_ma                = 20,
+                eq_ultra_ma               = 50,
+                edge_rolling_window       = 20,
+                min_win_rate              = 0.42,
+                min_sharpe                = 0.40,
+                min_profit_factor         = 1.05,
+                max_consec_losses         = 6,
+                base_kelly_fraction       = config.kelly_fraction,
+                aggressive_kelly_fraction = min(config.kelly_fraction * 1.5, 0.40),
+                reserve_rate              = 0.10,
+                reserve_locked            = True,
+                dd_velocity_window        = 10,
+                dd_velocity_halt_pct      = 8.0,
+                max_drawdown_target       = config.circuit_breaker_dd / 100.0,
+            )
+            armor = EquityArmor(armor_cfg)
+            print("  ✅ Equity Armor ACTIVE — Milestone floors + trailing stop enabled")
+        except ImportError:
+            print("  ⚠️  apex_equity_armor not found — using legacy circuit breaker")
+
+    print(f"\n{'='*70}")
+    print(f"  QUANTUM PORTFOLIO SIMULATOR v5.0")
+    print(f"  Universe      : {config.scan_universe} ({len(tickers)} tickers)")
+    print(f"  Period        : {start_date.date()} to {end_date.date()}")
+    print(f"  Capital       : ${config.initial_balance:,.2f}")
+    print(f"  Look-ahead Fix: NEXT-OPEN entry")
+    print(f"  Equity Armor  : {'ACTIVE' if armor else 'DISABLED'}")
+    print(f"  MTF Confluence: {'ACTIVE' if config.use_multi_timeframe else 'DISABLED'}")
+    print(f"  Slippage      : {config.slippage_pct}%")
+    print(f"{'='*70}")
+
+    # Pre-fetch data
     print("\n📡 Fetching historical data...")
     all_data: Dict[str, pd.DataFrame] = {}
     for i, ticker in enumerate(tickers):
@@ -1591,19 +1788,20 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         return result
 
     print(f"\n✅ {len(all_data)} tickers loaded.")
-    print(f"\n🔄 Starting rolling weekly scan with 3-layer gate...\n")
+    print(f"\n🔄 Starting v5 simulation loop...\n")
 
-    # ── Rolling weekly scan ───────────────────────────────────────
-    closed_trades  : List[TradeRecord] = []  # Only confirmed closed trades
-    open_positions : List[Dict] = []
+    closed_trades  : List[TradeRecord] = []
+    open_positions : List[Dict]        = []
     current_date   = start_date + timedelta(days=60)
     week_num       = 0
+    armor_events   : List[Dict]        = []
 
     while current_date <= end_date - timedelta(days=config.max_hold_days):
-        week_num += 1
-        candidates  = []
+        week_num         += 1
+        candidates        = []
+        current_date_str  = current_date.strftime("%Y-%m-%d")
 
-        # ── STEP 1: Score all tickers ──────────────────────────
+        # STEP 1: Score tickers
         for ticker, full_df in all_data.items():
             df_slice = full_df[full_df.index <= current_date].tail(90)
             if len(df_slice) < 55:
@@ -1613,19 +1811,18 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 candidates.append((ticker, score, df_slice))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
-        top_candidates = candidates[:config.max_open_trades * 2]  # Buffer lebih besar
+        top_candidates = candidates[:config.max_open_trades * 2]
 
         week_snapshot = {
-            "week"         : week_num,
-            "date"         : current_date.strftime("%Y-%m-%d"),
-            "balance"      : round(balance, 4),
-            "candidates"   : len(candidates),
-            "trades_opened": 0,
+            "week"          : week_num,
+            "date"          : current_date_str,
+            "balance"       : round(balance, 4),
+            "candidates"    : len(candidates),
+            "trades_opened" : 0,
             "open_positions": len(open_positions)
         }
 
-        # ── STEP 2: Close expired positions ────────────────────
-        # FIX v2: Balance HANYA diupdate di sini (saat posisi benar-benar tutup)
+        # STEP 2: Close expired positions
         positions_to_close = []
         for pos in open_positions:
             try:
@@ -1634,42 +1831,55 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 positions_to_close.append(pos)
                 continue
             if current_date >= exit_date_obj:
-                # Recalculate balance_after berdasarkan balance saat ini
-                trade = pos["trade"]
+                trade               = pos["trade"]
                 trade.balance_after = round(balance + trade.pnl_usd, 4)
-                balance = trade.balance_after
+                balance             = trade.balance_after
                 closed_trades.append(trade)
                 positions_to_close.append(pos)
+                # [v5] Notify armor of trade close
+                if armor:
+                    armor.record_trade(
+                        pnl_usd = trade.pnl_usd,
+                        is_win  = (trade.outcome == "WIN"),
+                        date    = trade.exit_date,
+                    )
 
         for p in positions_to_close:
             open_positions.remove(p)
 
-        # ── STEP 3: Circuit Breaker ─────────────────────────────
-        drawdown_from_start = (balance - config.initial_balance) / config.initial_balance * 100
+        # STEP 3: Equity Armor gate + legacy circuit breaker
+        if armor:
+            armor_status = armor.update(balance, date=current_date_str)
+            if armor_status.get("milestone", {}).get("milestone_unlocked") or armor_status.get("system_halted"):
+                armor_events.append({
+                    "date"             : current_date_str,
+                    "balance"          : round(balance, 2),
+                    "system_halted"    : armor_status.get("system_halted", False),
+                    "halt_reason"      : armor_status.get("halt_reason", ""),
+                    "milestone"        : armor_status.get("milestone", {}).get("active_milestone"),
+                    "floor_balance"    : armor_status.get("milestone", {}).get("locked_floor_balance"),
+                    "floor_pct"        : armor_status.get("milestone", {}).get("locked_floor_pct"),
+                    "new_milestone"    : armor_status.get("milestone", {}).get("milestone_unlocked"),
+                    "operational_mode" : armor_status.get("operational_mode"),
+                    "final_risk_scale" : armor_status.get("final_risk_scale", 1.0),
+                })
+            if armor_status.get("system_halted"):
+                reason = armor_status.get("halt_reason", "ARMOR_HALT")
+                ms_data = armor_status.get("milestone", {})
+                print(f"\n   🛡️  ARMOR HALT Week {week_num}: {reason}")
+                print(f"   Balance: ${balance:,.2f} | Floor: ${ms_data.get('locked_floor_balance', 0):,.2f}\n")
+                result.weekly_snapshots.append(week_snapshot)
+                current_date += timedelta(days=config.scan_interval_days)
+                continue
+            armor_risk_scale = float(armor_status.get("final_risk_scale", 1.0))
+        else:
+            dd_pct = (balance - config.initial_balance) / config.initial_balance * 100
+            if dd_pct < -config.circuit_breaker_dd:
+                print(f"\n   🛑 CIRCUIT BREAKER Week {week_num} — DD: {dd_pct:.2f}%")
+                break
+            armor_risk_scale = 1.0
 
-        if drawdown_from_start < -config.circuit_breaker_dd:
-            print(f"\n   {'━'*60}")
-            print(f"   🛑 CIRCUIT BREAKER TRIGGERED AT WEEK {week_num}")
-            print(f"   Drawdown Limit (-{config.circuit_breaker_dd}%) Exceeded: {drawdown_from_start:.2f}%")
-            print(f"   Simulation halted to protect capital.")
-            print(f"   {'━'*60}\n")
-            # [v4.1] Halt immediately instead of skipping weeks
-            break
-
-        # ── STEP 4: Find entry signals via SOFT QUALITY SCORING ──
-        #
-        # v2.1 Philosophy: TIDAK ada hard block berdasarkan confidence.
-        # Semua sinyal valid bisa masuk, tapi SIZE disesuaikan dengan
-        # composite quality score. Sinyal lemah = posisi kecil.
-        # Hanya HIGH_VOL_BEARISH yang tetap di-skip (fundamental risk).
-        #
-        # Quality Score → Size Multiplier:
-        #   90-100 → 1.00× (full)
-        #   70-89  → 0.75×
-        #   50-69  → 0.55×
-        #   30-49  → 0.35×
-        #   <30    → 0.20× (minimum, masih masuk)
-        #
+        # STEP 4: Entries with look-ahead fix + MTF + slippage
         open_count  = len(open_positions)
         consec_loss = _get_consecutive_losses(closed_trades)
 
@@ -1677,144 +1887,132 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             if open_count >= config.max_open_trades:
                 break
 
-            # ── HARD BLOCK: Hanya untuk HIGH_VOL_BEARISH ──────────
             regime, regime_conf = _detect_regime_full(df_slice)
             if config.regime_filter and regime == "HIGH_VOL_BEARISH":
                 trades_filtered += 1
-                continue  # Satu-satunya hard block yang justified
+                continue
 
-            # ── ICT signal (WAJIB ada bias, tapi strength boleh apapun) ─
-            signal = _find_entry_signal_soft(df_slice, config)
-            if signal is None:
-                trades_filtered += 1
-                continue  # Hanya NEUTRAL yang diblok
-
-            # ── v4: QUALITY SCORE — DEBIASED (RSI + vol anti-signals removed) ──
-            tech = signal.get("tech", {})
-            quality_score, quality_breakdown = _compute_quality_score_v4(
-                score       = score,
-                regime_conf = regime_conf,
-                ict_signal  = signal,
-                tech        = tech,
-                direction   = signal["direction"],
-                df_slice    = df_slice,   # v4: needed for z-score computation
-            )
-
-            # ── MAP QUALITY → SIZE SCALE ───────────────────────────
-            if quality_score >= 90:
-                base_size_scale = 1.00
-            elif quality_score >= 75:
-                base_size_scale = 0.80
-            elif quality_score >= 60:
-                base_size_scale = 0.60
-            elif quality_score >= 45:
-                base_size_scale = 0.40
-            else:
-                base_size_scale = 0.22
-
-            # ── OVERLAY Regime context on size ────────────────────
-            if "BULLISH" in regime or "LOW_VOL" in regime:
-                regime_scale = config.regime_size_bull    # 1.00
-            elif "SIDEWAYS" in regime or "CHOP" in regime:
-                regime_scale = config.regime_size_chop    # 0.60
-            else:
-                regime_scale = 0.50   # Unknown → conservative
-
-            size_scale = base_size_scale * regime_scale
-
-            # ── Kelly-adaptive risk % ────────────────────────────
-            kelly_risk_pct, kelly_frac = _compute_adaptive_kelly(
-                closed_trades, config, config.risk_per_trade, consec_loss
-            )
-
-            # ── Get future data ──────────────────────────────────
+            # [v5 FIX 1] Get df_future FIRST for next-open entry price
             future_end = current_date + timedelta(days=config.max_hold_days + 5)
             full_df    = all_data[ticker]
             df_future  = full_df[
                 (full_df.index > current_date) &
                 (full_df.index <= future_end)
             ].head(config.max_hold_days)
-
             if df_future.empty:
                 continue
+
+            # [v5 FIX 1] Pass df_future to get next-open entry price
+            signal = _find_entry_signal_soft(df_slice, config, df_future=df_future)
+            if signal is None:
+                trades_filtered += 1
+                continue
+
+            direction = signal["direction"]
+
+            # [v5 FIX 3] Multi-Timeframe confluence check
+            if config.use_multi_timeframe:
+                mtf = _analyze_multi_timeframe(full_df, current_date, direction)
+                if mtf["trade_freq_boost"] == 0.0 or mtf["tf_aligned"] < config.mtf_min_alignment:
+                    mtf_filtered += 1
+                    continue
+                mtf_boost = mtf["trade_freq_boost"]
+            else:
+                mtf       = {"tf_aligned": 2, "mtf_label": "MTF_DISABLED", "trade_freq_boost": 1.0}
+                mtf_boost = 1.0
+
+            tech = signal.get("tech", {})
+            quality_score, _ = _compute_quality_score_v4(
+                score=score, regime_conf=regime_conf, ict_signal=signal,
+                tech=tech, direction=direction, df_slice=df_slice,
+            )
+
+            if quality_score >= 90:   base_size_scale = 1.00
+            elif quality_score >= 75: base_size_scale = 0.80
+            elif quality_score >= 60: base_size_scale = 0.60
+            elif quality_score >= 45: base_size_scale = 0.40
+            else:                     base_size_scale = 0.22
+
+            if "BULLISH" in regime or "LOW_VOL" in regime:
+                regime_scale = config.regime_size_bull
+            elif "SIDEWAYS" in regime or "CHOP" in regime:
+                regime_scale = config.regime_size_chop
+            else:
+                regime_scale = 0.50
+
+            # [v5] Final scale = quality × regime × MTF × armor
+            size_scale = float(np.clip(
+                base_size_scale * regime_scale * mtf_boost * armor_risk_scale,
+                0.05, 1.5
+            ))
+
+            kelly_risk_pct, kelly_frac = _compute_adaptive_kelly(
+                closed_trades, config, config.risk_per_trade, consec_loss
+            )
+
+            # [v5 FIX 4] Apply realistic slippage to entry price
+            signal = dict(signal)
+            raw_entry = signal["entry"]
+            if config.slippage_pct > 0:
+                slip_factor = (1.0 + config.slippage_pct / 100.0) if direction == "LONG" else \
+                              (1.0 - config.slippage_pct / 100.0)
+                slipped     = raw_entry * slip_factor
+                sl_dist     = abs(raw_entry - signal["sl"])
+                tp_dist     = abs(raw_entry - signal["tp"])
+                signal["entry"] = slipped
+                signal["sl"]    = round(slipped - sl_dist, 6) if direction == "LONG" else round(slipped + sl_dist, 6)
+                signal["tp"]    = round(slipped + tp_dist, 6) if direction == "LONG" else round(slipped - tp_dist, 6)
+                est_units       = (balance * kelly_risk_pct / 100.0 * size_scale) / max(sl_dist, 1e-6)
+                total_slippage_usd += abs(slipped - raw_entry) * est_units
 
             entry_date = current_date.strftime("%Y-%m-%d")
             trade_id  += 1
 
-            # ── SIMULATE TRADE ───────────────────────────────────
-            # FIX v2: balance_entry = current balance (tidak termasuk pending positions)
             trade = _simulate_trade(
-                ticker        = ticker,
-                signal        = signal,
-                df_future     = df_future,
-                balance_entry = balance,
-                config        = config,
-                trade_id      = trade_id,
-                entry_date    = entry_date,
-                regime        = regime,
-                regime_conf   = regime_conf,
-                score         = score,
-                risk_pct      = kelly_risk_pct,
-                kelly_frac    = kelly_frac,
-                size_scale    = size_scale,
-                quality_score = quality_score,
-                tp_multiplier = signal.get("tp_multiplier", 1.0),
-                tech          = tech,
-                sector        = "Unknown"
+                ticker=ticker, signal=signal, df_future=df_future,
+                balance_entry=balance, config=config, trade_id=trade_id,
+                entry_date=entry_date, regime=regime, regime_conf=regime_conf,
+                score=score, risk_pct=kelly_risk_pct, kelly_frac=kelly_frac,
+                size_scale=size_scale, quality_score=quality_score,
+                tp_multiplier=signal.get("tp_multiplier", 1.0), tech=tech, sector="Unknown",
             )
 
             if trade:
                 trade.leverage = round((trade.units * trade.entry_price) / balance, 3)
-
             if trade is None:
                 trade_id -= 1
                 continue
 
-            # Schedule trade (PnL akan diapply saat close di STEP 2)
-            open_positions.append({
-                "trade"    : trade,
-                "exit_date": trade.exit_date
-            })
+            open_positions.append({"trade": trade, "exit_date": trade.exit_date})
             open_count += 1
             week_snapshot["trades_opened"] += 1
 
-            regime_emoji = "🟢" if "BULL" in regime else "🟡" if "CHOP" in regime else "🔴"
-            icon         = "✅" if trade.outcome == "WIN" else "❌" if trade.outcome == "LOSS" else "〰️"
-            tech_flags   = ""
-            if tech.get("trend_aligned_bull") or tech.get("trend_aligned_bear"): tech_flags += "T"
-            if tech.get("rsi_ok_long") or tech.get("rsi_ok_short"): tech_flags += "R"
-            if tech.get("vol_confirmed"):  tech_flags += "V"
-            if tech.get("adx_trending"):   tech_flags += "A"
-            tp_mul_str = f"TP×{signal.get('tp_multiplier', 1.0)}"
-            print(f"   Week {week_num:3d} | {icon} {ticker:10s} "
-                  f"{signal['direction']:5s} | "
-                  f"Scr:{score:5.1f} | "
-                  f"Reg:{regime_emoji}{regime_conf:.0f}% | "
-                  f"ICT:{signal['strength']:8s} | "
-                  f"Q:{quality_score:.0f}/100 | "
-                  f"Tech:[{tech_flags:4s}] | "
-                  f"{tp_mul_str} | "
-                  f"Size:×{size_scale:.2f} | "
-                  f"P&L: ${trade.pnl_usd:+7.2f}")
+            icon     = "✅" if trade.outcome == "WIN" else "❌" if trade.outcome == "LOSS" else "〰️"
+            mtf_icon = "🎯" if mtf.get("tf_aligned", 0) == 3 else "⚡" if mtf.get("tf_aligned", 0) == 2 else "⚠️"
+            entry_t  = signal.get("entry_type", "?")[:1]
+            a_icon   = f"🛡️×{armor_risk_scale:.2f}" if armor else ""
+            print(f"   Wk{week_num:3d} | {icon} {ticker:10s} {direction:5s} | "
+                  f"Q:{quality_score:.0f} | MTF:{mtf_icon}{mtf.get('tf_aligned',0)}/3 | "
+                  f"E:{entry_t} | Sz:×{size_scale:.2f} {a_icon} | P&L:${trade.pnl_usd:+7.2f}")
 
         result.weekly_snapshots.append(week_snapshot)
-        current_date += timedelta(days=config.scan_interval_days)  # v4: configurable (default 3)
+        current_date += timedelta(days=config.scan_interval_days)
 
-    # ── Flush remaining open positions ────────────────────────────
+    # Flush remaining open positions
     for pos in open_positions:
-        trade = pos["trade"]
+        trade               = pos["trade"]
         trade.balance_after = round(balance + trade.pnl_usd, 4)
-        balance = trade.balance_after
+        balance             = trade.balance_after
         closed_trades.append(trade)
 
-    # ── Sort chronologically ──────────────────────────────────────
-    result.trades = sorted(closed_trades, key=lambda t: t.entry_date)
-    result.trades_filtered = trades_filtered
+    result.trades             = sorted(closed_trades, key=lambda t: t.entry_date)
+    result.trades_filtered    = trades_filtered
+    result.mtf_filtered       = mtf_filtered
+    result.slippage_total_usd = round(total_slippage_usd, 4)
+    result.armor_events       = armor_events
+    result                    = _compute_analytics(result)
 
-    # ── Compute final analytics ────────────────────────────────────
-    result = _compute_analytics(result)
-
-    print(f"\n{'═'*65}")
+    print(f"\n{'='*70}")
     print(f"  FINAL BALANCE  : ${result.final_balance:,.2f}")
     print(f"  TOTAL RETURN   : {result.total_return_pct:+.2f}%")
     print(f"  TOTAL TRADES   : {result.total_trades}")
@@ -1822,15 +2020,19 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     print(f"  PROFIT FACTOR  : {result.profit_factor:.3f}")
     print(f"  SHARPE         : {result.sharpe_ratio:.3f}")
     print(f"  MAX DRAWDOWN   : {result.max_drawdown_pct:.2f}%")
-    print(f"  TRADES FILTERED: {result.trades_filtered} (by 3-layer gate)")
-    print(f"{'═'*65}\n")
-
+    print(f"  GATE FILTERED  : {result.trades_filtered} (signal) | {result.mtf_filtered} (MTF)")
+    print(f"  SLIPPAGE COST  : ${result.slippage_total_usd:,.2f}")
+    if armor_events:
+        halts      = [e for e in armor_events if e.get("system_halted")]
+        milestones = [e for e in armor_events if e.get("new_milestone")]
+        print(f"  ARMOR HALTS    : {len(halts)}")
+        print(f"  MILESTONES HIT : {len(milestones)}")
+        for m in milestones:
+            print(f"    → {m['new_milestone']:10s} @ ${m['balance']:,.2f} | Floor: ${m.get('floor_balance',0):,.2f}")
+    print(f"{'='*70}\n")
     return result
 
 
-# ══════════════════════════════════════════════════════════════════
-#  REPORT GENERATORS
-# ══════════════════════════════════════════════════════════════════
 
 def generate_json_report(result: SimulationResult) -> Dict:
     """Export hasil simulasi sebagai dict JSON-serializable."""
@@ -1901,14 +2103,365 @@ def generate_json_report(result: SimulationResult) -> Dict:
             "avg_loss_pct"        : result.avg_loss_pct,
             "expectancy_usd"      : result.expectancy_usd,
             "trades_filtered"     : result.trades_filtered,
+            "mtf_filtered"        : result.mtf_filtered,         # [v5]
+            "slippage_total_usd"  : result.slippage_total_usd,   # [v5]
             "max_leverage_used"   : round(max([t.leverage for t in result.trades] + [0.0]), 2),
             "kelly_avg_fraction"  : result.kelly_avg_fraction,
         },
         "equity_curve"   : result.equity_curve,
         "trades"         : trades_list,
         "weekly_snapshots": result.weekly_snapshots,
+        "armor_events"   : result.armor_events,                   # [v5] milestone/halt log
         "best_trade"     : trades_list[result.trades.index(result.best_trade)]  if result.best_trade  and result.best_trade  in result.trades else None,
         "worst_trade"    : trades_list[result.trades.index(result.worst_trade)] if result.worst_trade and result.worst_trade in result.trades else None,
         # ── v4.0: Statistical validity + walk-forward ────────────
         **_compute_full_analytics_v4(result),
     }
+
+# ══════════════════════════════════════════════════════════════════
+#  run_simulation_stream  —  SSE generator, data 100% real
+#  Logika identik run_simulation(), tapi yield SSE string per minggu
+#  sehingga frontend bisa consume real-time via EventSource.
+#
+#  Event types yang di-yield (string "data: <json>\n\n"):
+#    phase  — transisi fase besar
+#    tick   — update per minggu: balance, trades, wins, dd, log
+#    trade  — setiap trade closed: ticker, pnl, outcome, balance
+#    done   — selesai, payload = full JSON report
+#    error  — exception
+# ══════════════════════════════════════════════════════════════════
+import json as _json_stream
+
+
+def run_simulation_stream(config: "SimulationConfig"):
+    """Generator — yield SSE events dengan data real dari simulation loop."""
+
+    def sse(t: str, p: dict) -> str:
+        p["type"] = t
+        return "data: " + _json_stream.dumps(p, default=str) + "\n\n"
+
+    try:
+        yield sse("phase", {"phase": "FETCH", "label": "Fetching historical data", "progress": 2})
+
+        end_date   = datetime.now() - timedelta(days=1)
+        start_date = end_date - timedelta(days=365 * config.lookback_years)
+        tickers    = WATCHLISTS.get(config.scan_universe, WATCHLISTS["US"])
+
+        result                = SimulationResult(config=config)
+        result.sim_start_date = start_date.strftime("%Y-%m-%d")
+        balance               = config.initial_balance
+        trade_id              = 0
+        trades_filtered       = 0
+        mtf_filtered          = 0
+        total_slippage_usd    = 0.0
+
+        # ── Fetch semua data dulu, yield progress tiap ticker ────
+        all_data: Dict[str, pd.DataFrame] = {}
+        n_tickers = len(tickers)
+        for i, ticker in enumerate(tickers):
+            df = _fetch_historical_data(ticker, start_date, end_date)
+            ok = df is not None and len(df) >= 60
+            if ok:
+                all_data[ticker] = df
+            prog = int(2 + (i + 1) / max(n_tickers, 1) * 16)
+            yield sse("tick", {
+                "phase"  : "FETCH",
+                "progress": prog,
+                "balance" : round(balance, 2),
+                "trades"  : 0, "wins": 0, "losses": 0, "dd_pct": 0.0,
+                "log"     : {
+                    "tag" : "DATA",
+                    "text": f"{ticker}  {'loaded ' + str(len(df)) + ' candles' if ok else 'skip — insufficient data'}",
+                },
+            })
+
+        if not all_data:
+            yield sse("error", {"message": "No valid ticker data loaded"})
+            return
+
+        # ── Init Equity Armor ────────────────────────────────────
+        yield sse("phase", {"phase": "GATE", "label": "Initializing armor + gate", "progress": 19})
+
+        armor = None
+        if getattr(config, "use_equity_armor", True):
+            try:
+                from app.engine.apex_equity_armor import EquityArmor, ArmorConfig as _ArmorCfg
+                armor = EquityArmor(_ArmorCfg(
+                    initial_balance           = config.initial_balance,
+                    trailing_stop_pct         = 0.15,
+                    trailing_warning_pct      = 0.08,
+                    target_vol_ann            = 0.15,
+                    max_vol_ann               = 0.50,
+                    eq_fast_ma                = 10,
+                    eq_slow_ma                = 20,
+                    eq_ultra_ma               = 50,
+                    edge_rolling_window       = 20,
+                    min_win_rate              = 0.42,
+                    min_sharpe                = 0.40,
+                    min_profit_factor         = 1.05,
+                    max_consec_losses         = 6,
+                    base_kelly_fraction       = config.kelly_fraction,
+                    aggressive_kelly_fraction = min(config.kelly_fraction * 1.5, 0.40),
+                    reserve_rate              = 0.10,
+                    reserve_locked            = True,
+                    dd_velocity_window        = 10,
+                    dd_velocity_halt_pct      = 8.0,
+                    max_drawdown_target       = config.circuit_breaker_dd / 100.0,
+                ))
+            except ImportError:
+                pass
+
+        yield sse("phase", {"phase": "SIM", "label": "Running simulation loop", "progress": 21})
+
+        # ── Main simulation loop ─────────────────────────────────
+        closed_trades : List[TradeRecord] = []
+        open_positions: List[Dict]        = []
+        armor_events  : List[Dict]        = []
+        current_date  = start_date + timedelta(days=60)
+        week_num      = 0
+        win_count     = 0
+        loss_count    = 0
+        peak_bal      = config.initial_balance
+        max_dd        = 0.0
+
+        total_days  = max(1, (end_date - timedelta(days=config.max_hold_days)
+                              - (start_date + timedelta(days=60))).days)
+        total_weeks = max(1, total_days // config.scan_interval_days)
+
+        while current_date <= end_date - timedelta(days=config.max_hold_days):
+            week_num        += 1
+            cur_str          = current_date.strftime("%Y-%m-%d")
+            progress_pct     = int(21 + (week_num / total_weeks) * 70)
+
+            # Score candidates
+            candidates = []
+            for ticker, full_df in all_data.items():
+                df_slice = full_df[full_df.index <= current_date].tail(90)
+                if len(df_slice) < 55:
+                    continue
+                score = _score_ticker(df_slice)
+                if score >= config.min_screener_score:
+                    candidates.append((ticker, score, df_slice))
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            top_candidates = candidates[: config.max_open_trades * 2]
+
+            week_snap = {
+                "week": week_num, "date": cur_str,
+                "balance": round(balance, 4), "candidates": len(candidates),
+                "trades_opened": 0, "open_positions": len(open_positions),
+            }
+
+            # ── Close expired positions ──────────────────────────
+            to_close = []
+            week_log = None
+            for pos in open_positions:
+                try:
+                    exit_dt = datetime.strptime(pos["exit_date"], "%Y-%m-%d")
+                except ValueError:
+                    to_close.append(pos); continue
+                if current_date >= exit_dt:
+                    tr               = pos["trade"]
+                    tr.balance_after = round(balance + tr.pnl_usd, 4)
+                    balance          = tr.balance_after
+                    closed_trades.append(tr)
+                    to_close.append(pos)
+                    if armor:
+                        armor.record_trade(pnl_usd=tr.pnl_usd,
+                                           is_win=(tr.outcome == "WIN"),
+                                           date=tr.exit_date)
+                    is_win = tr.outcome == "WIN"
+                    if is_win: win_count  += 1
+                    else:      loss_count += 1
+                    sign     = "+" if tr.pnl_usd >= 0 else ""
+                    week_log = {
+                        "tag" : "WIN" if is_win else "LOSS",
+                        "text": (f"{tr.ticker}  {tr.direction}  "
+                                 f"pnl={sign}${tr.pnl_usd:.2f}  bal=${balance:.2f}"),
+                    }
+                    # Per-trade event — frontend bisa pakai untuk live feed
+                    yield sse("trade", {
+                        "ticker"   : tr.ticker,
+                        "direction": tr.direction,
+                        "pnl_usd"  : round(tr.pnl_usd, 4),
+                        "outcome"  : tr.outcome,
+                        "balance"  : round(balance, 4),
+                        "date"     : tr.exit_date,
+                    })
+            for p in to_close:
+                open_positions.remove(p)
+
+            # Update DD
+            if balance > peak_bal: peak_bal = balance
+            cur_dd = (balance - peak_bal) / peak_bal * 100 if peak_bal > 0 else 0.0
+            if cur_dd < max_dd: max_dd = cur_dd
+
+            # ── Armor gate ───────────────────────────────────────
+            armor_risk_scale = 1.0
+            if armor:
+                armor_status = armor.update(balance, date=cur_str)
+                ms = armor_status.get("milestone", {})
+                if ms.get("milestone_unlocked") or armor_status.get("system_halted"):
+                    armor_events.append({
+                        "date"            : cur_str,
+                        "balance"         : round(balance, 2),
+                        "system_halted"   : armor_status.get("system_halted", False),
+                        "halt_reason"     : armor_status.get("halt_reason", ""),
+                        "milestone"       : ms.get("active_milestone"),
+                        "floor_balance"   : ms.get("locked_floor_balance"),
+                        "floor_pct"       : ms.get("locked_floor_pct"),
+                        "new_milestone"   : ms.get("milestone_unlocked"),
+                        "operational_mode": armor_status.get("operational_mode"),
+                        "final_risk_scale": armor_status.get("final_risk_scale", 1.0),
+                    })
+                if armor_status.get("system_halted"):
+                    halt_log = {
+                        "tag" : "ARMOR",
+                        "text": (f"HALT  {armor_status.get('halt_reason','')}  "
+                                 f"floor=${ms.get('locked_floor_balance',0):.2f}"),
+                    }
+                    result.weekly_snapshots.append(week_snap)
+                    yield sse("tick", {
+                        "phase": "SIM", "progress": min(progress_pct, 91),
+                        "balance": round(balance, 2), "trades": len(closed_trades),
+                        "wins": win_count, "losses": loss_count,
+                        "dd_pct": round(abs(max_dd), 3),
+                        "log": halt_log, "week": week_num, "date": cur_str,
+                    })
+                    current_date += timedelta(days=config.scan_interval_days)
+                    continue
+                armor_risk_scale = float(armor_status.get("final_risk_scale", 1.0))
+            else:
+                dd_check = (balance - config.initial_balance) / config.initial_balance * 100
+                if dd_check < -config.circuit_breaker_dd:
+                    result.weekly_snapshots.append(week_snap)
+                    yield sse("tick", {
+                        "phase": "SIM", "progress": min(progress_pct, 91),
+                        "balance": round(balance, 2), "trades": len(closed_trades),
+                        "wins": win_count, "losses": loss_count,
+                        "dd_pct": round(abs(max_dd), 3),
+                        "log": {"tag":"ARMOR","text":f"CIRCUIT BREAKER  dd={dd_check:.2f}%"},
+                        "week": week_num, "date": cur_str,
+                    })
+                    break
+
+            # ── Entry loop ───────────────────────────────────────
+            open_count  = len(open_positions)
+            consec_loss = _get_consecutive_losses(closed_trades)
+
+            for ticker, score, df_slice in top_candidates:
+                if open_count >= config.max_open_trades:
+                    break
+                regime, regime_conf = _detect_regime_full(df_slice)
+                if config.regime_filter and regime == "HIGH_VOL_BEARISH":
+                    trades_filtered += 1; continue
+                future_end = current_date + timedelta(days=config.max_hold_days + 5)
+                full_df    = all_data[ticker]
+                df_future  = full_df[
+                    (full_df.index > current_date) & (full_df.index <= future_end)
+                ].head(config.max_hold_days)
+                if df_future.empty: continue
+                signal = _find_entry_signal_soft(df_slice, config, df_future=df_future)
+                if signal is None:
+                    trades_filtered += 1; continue
+                direction = signal["direction"]
+                if config.use_multi_timeframe:
+                    mtf = _analyze_multi_timeframe(full_df, current_date, direction)
+                    if mtf["trade_freq_boost"] == 0.0 or mtf["tf_aligned"] < config.mtf_min_alignment:
+                        mtf_filtered += 1; continue
+                    mtf_boost = mtf["trade_freq_boost"]
+                else:
+                    mtf_boost = 1.0
+                tech = signal.get("tech", {})
+                quality_score, _ = _compute_quality_score_v4(
+                    score=score, regime_conf=regime_conf, ict_signal=signal,
+                    tech=tech, direction=direction, df_slice=df_slice,
+                )
+                if   quality_score >= 90: base_ss = 1.00
+                elif quality_score >= 75: base_ss = 0.80
+                elif quality_score >= 60: base_ss = 0.60
+                elif quality_score >= 45: base_ss = 0.40
+                else:                     base_ss = 0.22
+                if   "BULLISH" in regime or "LOW_VOL" in regime: rs = config.regime_size_bull
+                elif "SIDEWAYS" in regime or "CHOP"   in regime: rs = config.regime_size_chop
+                else:                                              rs = 0.50
+                size_scale = float(np.clip(base_ss * rs * mtf_boost * armor_risk_scale, 0.05, 1.5))
+                kelly_risk_pct, kelly_frac = _compute_adaptive_kelly(
+                    closed_trades, config, config.risk_per_trade, consec_loss
+                )
+                signal = dict(signal)
+                raw_entry = signal["entry"]
+                if config.slippage_pct > 0:
+                    sf      = (1 + config.slippage_pct/100) if direction=="LONG" else (1 - config.slippage_pct/100)
+                    slipped = raw_entry * sf
+                    sl_d    = abs(raw_entry - signal["sl"])
+                    tp_d    = abs(raw_entry - signal["tp"])
+                    signal["entry"] = slipped
+                    signal["sl"]    = round(slipped - sl_d, 6) if direction=="LONG" else round(slipped + sl_d, 6)
+                    signal["tp"]    = round(slipped + tp_d, 6) if direction=="LONG" else round(slipped - tp_d, 6)
+                    est_u           = (balance * kelly_risk_pct/100 * size_scale) / max(sl_d, 1e-6)
+                    total_slippage_usd += abs(slipped - raw_entry) * est_u
+                trade_id += 1
+                trade = _simulate_trade(
+                    ticker=ticker, signal=signal, df_future=df_future,
+                    balance_entry=balance, config=config, trade_id=trade_id,
+                    entry_date=cur_str, regime=regime, regime_conf=regime_conf,
+                    score=score, risk_pct=kelly_risk_pct, kelly_frac=kelly_frac,
+                    size_scale=size_scale, quality_score=quality_score,
+                    tp_multiplier=signal.get("tp_multiplier", 1.0), tech=tech, sector="Unknown",
+                )
+                if trade: trade.leverage = round((trade.units * trade.entry_price) / balance, 3)
+                if trade is None: trade_id -= 1; continue
+                open_positions.append({"trade": trade, "exit_date": trade.exit_date})
+                open_count += 1
+                week_snap["trades_opened"] += 1
+                if week_log is None:
+                    week_log = {
+                        "tag" : "GATE",
+                        "text": (f"{ticker}  {direction}  entry=${trade.entry_price:.2f}  "
+                                 f"Q={quality_score:.0f}  sz=x{size_scale:.2f}"),
+                    }
+
+            result.weekly_snapshots.append(week_snap)
+
+            # Emit weekly tick — 100% data real dari loop
+            if week_log is None:
+                week_log = {
+                    "tag" : "SCREEN",
+                    "text": f"wk{week_num}  {cur_str}  candidates={len(candidates)}  open={len(open_positions)}",
+                }
+            yield sse("tick", {
+                "phase"   : "SIM",
+                "progress": min(progress_pct, 91),
+                "balance" : round(balance, 2),
+                "trades"  : len(closed_trades),
+                "wins"    : win_count,
+                "losses"  : loss_count,
+                "dd_pct"  : round(abs(max_dd), 3),
+                "log"     : week_log,
+                "week"    : week_num,
+                "date"    : cur_str,
+            })
+            current_date += timedelta(days=config.scan_interval_days)
+
+        # Flush remaining open positions
+        for pos in open_positions:
+            tr               = pos["trade"]
+            tr.balance_after = round(balance + tr.pnl_usd, 4)
+            balance          = tr.balance_after
+            closed_trades.append(tr)
+
+        # ── Compute metrics ──────────────────────────────────────
+        yield sse("phase", {"phase": "METRICS", "label": "Computing analytics", "progress": 93})
+        result.trades             = sorted(closed_trades, key=lambda t: t.entry_date)
+        result.trades_filtered    = trades_filtered
+        result.mtf_filtered       = mtf_filtered
+        result.slippage_total_usd = round(total_slippage_usd, 4)
+        result.armor_events       = armor_events
+        result                    = _compute_analytics(result)
+        yield sse("phase", {"phase": "METRICS", "label": "Finalizing report", "progress": 98})
+        report = generate_json_report(result)
+        yield sse("done", {"progress": 100, "report": report})
+
+    except Exception as exc:
+        import traceback as _tb
+        yield sse("error", {"message": str(exc), "traceback": _tb.format_exc()})

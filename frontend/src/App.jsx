@@ -19,6 +19,7 @@ import AIAnalyst      from "./components/dashboard/AIAnalyst";
 import Screener       from "./components/dashboard/Screener";
 import QuantumPortfolioSimulator from "./components/dashboard/QuantumPortfolioSimulator";
 import InstitutionalAuditPanel   from "./components/dashboard/InstitutionalAuditPanel";
+import DemoTrading               from "./components/dashboard/DemoTrading";
 
 const API     = "http://localhost:8001";
 const TICKERS = ["BBCA.JK", "BBRI.JK", "NVDA", "BTC-USD"];
@@ -131,6 +132,7 @@ const NAV_VIEWS = [
   { id: 'screener',            label: 'Screener' },
   { id: 'simulator',           label: 'Simulator' },
   { id: 'institutional-audit', label: 'Audit' },
+  { id: 'demo', label: 'Demo Trading' },
 ];
 
 // ─────────────────────────────────────────────────────────────────
@@ -619,7 +621,7 @@ function AppInner() {
               {[
                 ['Struct',  (apexData?.ict_analysis?.market_structure?.market_structure ?? '—').replace(/_/g,' ')],
                 ['FVG',     apexData?.ict_analysis?.fvg_analysis ? (apexData.ict_analysis.fvg_analysis.unfilled_bullish?.length || 0) + (apexData.ict_analysis.fvg_analysis.unfilled_bearish?.length || 0) : '—'],
-                ['Liquidity',apexData?.liq_regime?.liquidity_regime ?? '—'],
+                ['Liq Bias',apexData?.ict_analysis?.liquidity_zones?.liquidity_bias ?? '—'],
                 ['Price Pos',apexData?.ict_analysis?.market_structure?.market_structure?.replace(/_/g, ' ') || '—'],
               ].map(([l, v]) => (
                 <div key={l} style={{ background: 'var(--surface2)', borderRadius: 7, padding: '8px 10px' }}>
@@ -632,10 +634,10 @@ function AppInner() {
         </div>
 
         {/* 4 — Quant Metrics Grid */}
-        <div className="anim d2 card" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', overflow: 'hidden' }}>
+        <div className="anim d2 card" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', overflow: 'hidden', padding: '16px', gap: 16 }}>
           <MetricCell label="APEX Score"       value={apexScore} color={apexScore >= 70 ? 'green' : apexScore <= 30 ? 'red' : undefined} />
           <MetricCell label="Sortino Ratio"    value={(data.metrics?.sortino ?? apexData?.quant?.sortino ?? 0).toFixed(2)} color={(data.metrics?.sortino ?? 0) > 0.5 ? 'green' : 'red'} />
-          <MetricCell label="VaR 95%"          value={`${(apexData?.quant?.var_95_cf_pct ?? 0).toFixed(3)}%`} color="red" />
+          <MetricCell label="VaR 95%"          value={`${(apexData?.statistics?.var_cvar?.var_pct ?? 0).toFixed(3)}%`} color="red" />
           <MetricCell label="Win Prob (MC)"    value={`${apexData?.statistics?.monte_carlo?.prob_profit_pct ?? 0}%`} color={(apexData?.statistics?.monte_carlo?.prob_profit_pct ?? 50) > 50 ? 'green' : 'red'} last />
           <MetricCell label="Z-Score"          value={`${(apexData?.statistics?.zscore?.current_zscore ?? 0) > 0 ? '+' : ''}${(apexData?.statistics?.zscore?.current_zscore ?? 0).toFixed(2)}σ`} color={Math.abs(apexData?.statistics?.zscore?.current_zscore ?? 0) >= 2 ? 'red' : undefined} />
           <MetricCell label="Market Regime"    value={(apexData?.statistics?.regime?.market_regime ?? 'UNKNOWN').replace(/_/g,' ')} color="blue" />
@@ -647,15 +649,15 @@ function AppInner() {
         {apexData && <MacroIntelligence apexData={apexData} />}
 
         {/* 6 — Fundamentals */}
-        {apexData?.fundamentals && (
+        {data.fundamentals && (
           <div className="anim d3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="card" style={{ padding: 24 }}>
               <SectionHead label="Fundamental Statistics" />
-              <KeyStats stats={apexData.fundamentals.stats} currency={apexData.profile?.currency} />
+              <KeyStats stats={data.fundamentals.stats} currency={data.profile?.currency} />
             </div>
             <div className="card" style={{ padding: 24 }}>
               <SectionHead label="Ownership Structure" badge="Bandarmologi" badgeType="badge-blue" />
-              <OwnershipBar ownership={apexData.fundamentals.ownership} />
+              <OwnershipBar ownership={data.fundamentals.ownership} />
             </div>
           </div>
         )}
@@ -809,6 +811,7 @@ function AppInner() {
                   <button
                     key={id}
                     onClick={() => id === 'home' ? (setActiveView('home'), setHasSearched(false)) : setActiveView(id)}
+                    data-demo={id === 'demo' ? 'true' : undefined}
                     style={{
                       background: isActive ? 'var(--surface2)' : 'none',
                       border: `1px solid ${isActive ? 'var(--border)' : 'transparent'}`,
@@ -889,6 +892,7 @@ function AppInner() {
         {activeView === 'screener'            && <Screener onAnalyze={handleScreenerAnalyze} />}
         {activeView === 'simulator'           && <QuantumPortfolioSimulator />}
         {activeView === 'institutional-audit' && <InstitutionalAuditPanel />}
+        {activeView === 'demo' && <DemoTrading />}
         {loading && renderLoading()}
         {!loading && activeView === 'analysis' && data && renderAnalysis()}
       </main>

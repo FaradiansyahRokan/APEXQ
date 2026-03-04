@@ -1860,7 +1860,14 @@ def advanced_risk_decomposition(
         "hi_vol_sharpe"     : round(_safe_sharpe(hi_r),4) if len(hi_r) > 5 else 0.0,
         "lo_vol_sharpe"     : round(_safe_sharpe(lo_r),4) if len(lo_r) > 5 else 0.0,
         "cvar_99_cf_usd"    : round(cc9 * capital, 2),
-        "tail_risk_rating"  : "HIGH" if float(sp_kurt(r)) > 5 else "ELEVATED" if float(sp_kurt(r)) > 3 else "NORMAL",
+        "tail_risk_rating"     : "HIGH" if float(sp_kurt(r)) > 5 else "ELEVATED" if float(sp_kurt(r)) > 3 else "NORMAL",
+        # ── Added for InstitutionalAuditPanel ──
+        "annualized_return_pct": round(float(np.mean(r) * ann) * 100, 4),
+        "annualized_vol_pct"   : round(float(np.std(r) * np.sqrt(ann)) * 100, 4),
+        "ulcer_index"          : round(float(np.sqrt(np.mean(((np.exp(np.cumsum(r)) - np.maximum.accumulate(np.exp(np.cumsum(r)))) / np.where(np.maximum.accumulate(np.exp(np.cumsum(r))) > 0, np.maximum.accumulate(np.exp(np.cumsum(r))), 1)) ** 2))), 6),
+        "omega_ratio"          : round(float(r[r>0].sum() / abs(r[r<0].sum())) if abs(r[r<0].sum()) > 1e-12 else 9999.0, 4),
+        "fat_tail_present"     : float(sp_kurt(r)) > 3,
+        "negative_skew_warning": float(sp_skew(r)) < -0.5,
     }
 
 
@@ -2007,9 +2014,36 @@ def generate_institutional_report(
         },
         "statistical_validity": {
             "n_obs": n, "n_trades": n_tr,
-            "dsr_probability": dsr.get("dsr_probability",0),
-            "dsr_pass": dsr.get("is_significant_95",False),
+            # DSR (flat)
+            "dsr_probability"  : dsr.get("dsr_probability", 0),
+            "dsr_pass"         : dsr.get("is_significant_95", False),
+            # Bootstrap
             "bootstrap_sr_ci_95": [bsr.get("ci_lower",0), bsr.get("ci_upper",0)],
+            # Nested sub-objects for frontend
+            "bootstrap_sharpe_95ci": {
+                "lower"           : bsr.get("ci_lower", 0),
+                "upper"           : bsr.get("ci_upper", 0),
+                "prob_sr_positive": bsr.get("prob_sr_positive_pct", 0),
+                "prob_sr_above_1" : bsr.get("prob_sr_above_1_pct", 0),
+                "prob_sr_above_15": round(float((np.array([]) > 1.5).mean() * 100), 2),
+            },
+            "deflated_sharpe_ratio": {
+                "dsr_probability" : dsr.get("dsr_probability", 0),
+                "is_significant_05": dsr.get("is_significant_95", False),
+                "sr_star_threshold": dsr.get("sr_star_threshold", 0),
+                "n_trials"         : dsr.get("n_trials", n_trials_tested),
+                "interpretation"   : dsr.get("verdict", ""),
+            },
+            "lo2002_autocorr_adj": {
+                "raw_sharpe"              : lo.get("raw_sharpe", sr),
+                "adjusted_sharpe_lo2002"  : lo.get("adjusted_sharpe_lo2002", adj_sr),
+                "autocorr_factor_eta"     : lo.get("eta", 1.0),
+                "interpretation"          : f"η={lo.get('eta',1.0):.3f} — SR {'over-stated' if lo.get('eta',1.0)>1 else 'under-stated'} by autocorrelation",
+            },
+            # t-test: H0: mean return = 0
+            "t_statistic"     : round(float(np.mean(r) / (np.std(r, ddof=1) / np.sqrt(n))), 4) if n > 1 else 0.0,
+            "p_value"         : round(float(2 * (1 - __import__("scipy.stats", fromlist=["t"]).t.cdf(abs(np.mean(r) / (np.std(r, ddof=1) / np.sqrt(n))), df=n-1))), 6) if n > 1 else 1.0,
+            "is_significant_05": (abs(np.mean(r) / (np.std(r, ddof=1) / np.sqrt(n))) > 1.96) if n > 1 else False,
         },
         "risk": {
             "var_95_hist_pct": round(vh*100,4), "cvar_95_hist_pct": round(ch*100,4),
@@ -2023,6 +2057,8 @@ def generate_institutional_report(
         "deployment_gate"    : gate,
         "deployment_approved": approved,
         "blockers"           : [k for k,v in gate.items() if not v],
+        "overall_verdict"    : "DEPLOY" if approved else ("RESEARCH" if sum(gate.values()) >= 2 else "DISCARD"),
+        "checks_passed"      : sum(gate.values()),
         "next_steps": ("Start paper trading at 10% target AUM." if approved
                        else f"Fix blockers: {[k for k,v in gate.items() if not v]}"),
     }
