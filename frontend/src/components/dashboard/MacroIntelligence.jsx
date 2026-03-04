@@ -127,14 +127,14 @@ export function MacroIntelligence({ apexData }) {
         <Panel label="Factor Alpha">
           <Row
             label="Momentum"
-            value={factor_lab?.momentum_acceleration || '—'}
-            color={factor_lab?.momentum_acceleration === 'ACCELERATING' ? 'var(--pos)' : 'var(--neg)'}
+            value={apexData?.factor?.momentum_factor?.acceleration_label || '—'}
+            color={apexData?.factor?.momentum_factor?.acceleration_label === 'ACCELERATING' ? 'var(--pos)' : 'var(--neg)'}
           />
-          <Row label="Beta / NDX" value={(factor_lab?.market_beta_nasdaq ?? 0).toFixed(3)} />
+          <Row label="VRP Level" value={`${(apexData?.factor?.vol_risk_premium?.vrp_meaningful_pct ?? 0).toFixed(2)}%`} />
           <Row
-            label="Risk Mode"
-            value={factor_lab?.risk_mode || '—'}
-            color={factor_lab?.risk_mode === 'RISK_ON' ? 'var(--pos)' : undefined}
+            label="Vol Premium"
+            value={apexData?.factor?.vol_risk_premium?.vrp_regime?.replace(/_/g, ' ') || '—'}
+            color={apexData?.factor?.vol_risk_premium?.vrp_regime === 'ELEVATED_MEAN_REVERSION' ? 'var(--pos)' : undefined}
           />
           <Row
             label="Sortino"
@@ -161,7 +161,7 @@ export function MacroIntelligence({ apexData }) {
           </div>
           <Row label="POC"       value={ict?.volume_profile?.poc_price ? ict.volume_profile.poc_price.toFixed(4) : "—"} />
           <Row label="Price Pos" value={ict?.market_structure?.market_structure?.replace(/_/g, ' ') || '—'} />
-          <Row label="Liq Bias"  value={ict?.liquidity_zones?.liquidity_bias || '—'} />
+          <Row label="Liquidity" value={apexData?.liq_regime?.liquidity_regime || '—'} />
           <Row label="Structure" value={ict?.market_structure?.market_structure?.replace(/_/g, ' ') || '—'} />
         </Panel>
       </div>

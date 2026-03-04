@@ -619,7 +619,7 @@ function AppInner() {
               {[
                 ['Struct',  (apexData?.ict_analysis?.market_structure?.market_structure ?? '—').replace(/_/g,' ')],
                 ['FVG',     apexData?.ict_analysis?.fvg_analysis ? (apexData.ict_analysis.fvg_analysis.unfilled_bullish?.length || 0) + (apexData.ict_analysis.fvg_analysis.unfilled_bearish?.length || 0) : '—'],
-                ['Liq Bias',apexData?.ict_analysis?.liquidity_zones?.liquidity_bias ?? '—'],
+                ['Liquidity',apexData?.liq_regime?.liquidity_regime ?? '—'],
                 ['Price Pos',apexData?.ict_analysis?.market_structure?.market_structure?.replace(/_/g, ' ') || '—'],
               ].map(([l, v]) => (
                 <div key={l} style={{ background: 'var(--surface2)', borderRadius: 7, padding: '8px 10px' }}>
@@ -635,7 +635,7 @@ function AppInner() {
         <div className="anim d2 card" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', overflow: 'hidden' }}>
           <MetricCell label="APEX Score"       value={apexScore} color={apexScore >= 70 ? 'green' : apexScore <= 30 ? 'red' : undefined} />
           <MetricCell label="Sortino Ratio"    value={(data.metrics?.sortino ?? apexData?.quant?.sortino ?? 0).toFixed(2)} color={(data.metrics?.sortino ?? 0) > 0.5 ? 'green' : 'red'} />
-          <MetricCell label="VaR 95%"          value={`${(apexData?.statistics?.var_cvar?.var_pct ?? 0).toFixed(3)}%`} color="red" />
+          <MetricCell label="VaR 95%"          value={`${(apexData?.quant?.var_95_cf_pct ?? 0).toFixed(3)}%`} color="red" />
           <MetricCell label="Win Prob (MC)"    value={`${apexData?.statistics?.monte_carlo?.prob_profit_pct ?? 0}%`} color={(apexData?.statistics?.monte_carlo?.prob_profit_pct ?? 50) > 50 ? 'green' : 'red'} last />
           <MetricCell label="Z-Score"          value={`${(apexData?.statistics?.zscore?.current_zscore ?? 0) > 0 ? '+' : ''}${(apexData?.statistics?.zscore?.current_zscore ?? 0).toFixed(2)}σ`} color={Math.abs(apexData?.statistics?.zscore?.current_zscore ?? 0) >= 2 ? 'red' : undefined} />
           <MetricCell label="Market Regime"    value={(apexData?.statistics?.regime?.market_regime ?? 'UNKNOWN').replace(/_/g,' ')} color="blue" />
@@ -647,15 +647,15 @@ function AppInner() {
         {apexData && <MacroIntelligence apexData={apexData} />}
 
         {/* 6 — Fundamentals */}
-        {data.fundamentals && (
+        {apexData?.fundamentals && (
           <div className="anim d3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="card" style={{ padding: 24 }}>
               <SectionHead label="Fundamental Statistics" />
-              <KeyStats stats={data.fundamentals.stats} currency={data.profile?.currency} />
+              <KeyStats stats={apexData.fundamentals.stats} currency={apexData.profile?.currency} />
             </div>
             <div className="card" style={{ padding: 24 }}>
               <SectionHead label="Ownership Structure" badge="Bandarmologi" badgeType="badge-blue" />
-              <OwnershipBar ownership={data.fundamentals.ownership} />
+              <OwnershipBar ownership={apexData.fundamentals.ownership} />
             </div>
           </div>
         )}

@@ -19,7 +19,7 @@ export default function AIAnalyst({ ticker, apexData, tf = '1D' }) {
   const verdictColor = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--ink2)';
 
   const rr   = apexData?.kelly?.reward_risk_ratio;
-  const prob = apexData?.statistics?.monte_carlo?.probability_analysis?.prob_profit_pct;
+  const prob = apexData?.statistics?.monte_carlo?.prob_profit_pct;
   const score = apexData?.apex_score?.score;
 
   const runAnalysis = async () => {
