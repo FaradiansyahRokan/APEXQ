@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API } from "../../config";
 import ReactMarkdown from 'react-markdown';
 
 const MetricTile = ({ label, value, color = 'var(--ink)' }) => (
@@ -27,7 +28,7 @@ export default function AIAnalyst({ ticker, apexData, tf = '1D' }) {
     setAnalysis('');
     setIsThinking(true);
     try {
-      const res = await fetch(`http://localhost:8001/api/satin/stream/${ticker}?tf=${tf}`);
+      const res = await fetch(`${API}/api/satin/stream/${ticker}?tf=${tf}`);
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let full = '';

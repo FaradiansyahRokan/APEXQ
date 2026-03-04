@@ -9,7 +9,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
-const API = 'http://localhost:8001';
+import { API as _API, WS_URL } from '../../config';
+const API = _API;
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt    = (n, d = 2)  => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -269,7 +270,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
   // ─── WebSocket ──────────────────────────────────────────────────────────────
   const connectWS = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    const ws = new WebSocket(`ws://localhost:8001/ws/hft`);
+    const ws = new WebSocket(`${WS_URL}/ws/hft`);
     ws.onclose   = () => setTimeout(connectWS, 3000);
     ws.onerror   = () => ws.close();
     ws.onmessage = (e) => {

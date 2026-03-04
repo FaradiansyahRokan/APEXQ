@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from 'recharts';
+import { API } from "../../config";
 
 // ─── Shared UI Components ──────────────────────────────────────
 
@@ -232,7 +233,7 @@ export default function QuantumPortfolioSimulator() {
     };
 
     try {
-      const response = await fetch("http://localhost:8001/api/simulate/stream", {
+      const response = await fetch(`${API}/api/simulate/stream`, {
         method : "POST",
         headers: { "Content-Type": "application/json" },
         body   : JSON.stringify(config),

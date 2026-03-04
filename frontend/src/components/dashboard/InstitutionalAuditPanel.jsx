@@ -5,7 +5,8 @@ const GN = "var(--green, #10b981)";
 const RD = "var(--red,  #f43f5e)";
 const AM = "var(--amber, #f59e0b)";
 const MN = "var(--mono, 'IBM Plex Mono', monospace)";
-const BASE = "http://localhost:8001";
+import { API } from "../../config";
+const BASE = API;
 
 const Spin = () => (
   <div style={{ width:14,height:14,border:"1.5px solid rgba(255,255,255,.1)",borderTopColor:G,borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0 }} />

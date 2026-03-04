@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { API } from "../config";
 
 import { FontInjector, GlobalStyles, ThemeProvider, ThemeToggle, Divider, formatPrice } from "./components/common/GlobalStyles";
 import { Label }             from "./components/common/Label";
@@ -21,7 +22,7 @@ import QuantumPortfolioSimulator from "./components/dashboard/QuantumPortfolioSi
 import InstitutionalAuditPanel   from "./components/dashboard/InstitutionalAuditPanel";
 import DemoTrading               from "./components/dashboard/DemoTrading";
 
-const API     = "http://localhost:8001";
+
 const TICKERS = ["BBCA.JK", "BBRI.JK", "NVDA", "BTC-USD"];
 
 // ─────────────────────────────────────────────────────────────────

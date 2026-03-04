@@ -23,7 +23,8 @@ import MarketOverview from '../MarketOverview';
 import Orderbook      from './OrderBook';
 import HFTBot         from './HftBot';
 
-const API      = 'http://localhost:8001';
+import { API as _API } from '../../config';
+const API      = _API;
 const DEMO_KEY = 'apexq_demo_v2';
 
 // ─── Formatters ───────────────────────────────────────────────────

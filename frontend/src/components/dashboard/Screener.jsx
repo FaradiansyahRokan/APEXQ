@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 
-const API = "http://localhost:8001";
+import { API } from "../../config";
 
 // ─────────────────────────────────────────────────────────────────
 //  INTERNAL SUB-COMPONENTS
