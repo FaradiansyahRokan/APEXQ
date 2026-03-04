@@ -1,61 +1,73 @@
 import React from 'react';
-import { Label } from '../common/Label';
 import MarketOverview from '../MarketOverview';
 
 export const WatchlistCard = ({ item, onClick }) => {
-  const up = (item.change ?? 0) >= 0;
-  const clr = up ? 'var(--green)' : 'var(--red)';
-  const chartHex = up ? '#10B981' : '#F43F5E';
+  const up  = (item.change ?? 0) >= 0;
+  const clr = up ? 'var(--pos)' : 'var(--neg)';
+  const hex = up ? '#22c55e' : '#ef4444';
 
   return (
-    <div onClick={onClick} className="card" style={{
-      padding: 24, display: 'flex', flexDirection: 'column', gap: 18,
-      cursor: 'pointer', transition: 'all .25s cubic-bezier(.22,1,.36,1)',
-    }}
-    onMouseEnter={e => {
-      e.currentTarget.style.borderColor = 'var(--border3)';
-      e.currentTarget.style.transform = 'translateY(-3px)';
-      e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,0,0,.5)';
-    }}
-    onMouseLeave={e => {
-      e.currentTarget.style.borderColor = 'var(--border)';
-      e.currentTarget.style.transform = 'translateY(0)';
-      e.currentTarget.style.boxShadow = 'none';
-    }}>
-      {/* Top row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <Label style={{ marginBottom: 6 }}>{item.symbol}</Label>
-          <h4 style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--ink)' }}>{item.name}</h4>
+    <div
+      onClick={onClick}
+      style={{
+        padding: '18px 20px',
+        cursor: 'pointer',
+        borderBottom: '1px solid var(--border)',
+        transition: 'background .15s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface2)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+
+        {/* Left: ticker + name */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{
+            fontSize: 13, fontWeight: 700,
+            color: 'var(--ink)', letterSpacing: '0.01em',
+            marginBottom: 2,
+          }}>
+            {item.ticker}
+          </p>
+          {item.name && (
+            <p style={{
+              fontSize: 10, color: 'var(--ink4)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {item.name}
+            </p>
+          )}
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{item.price?.toLocaleString() ?? '—'}</p>
-          <span style={{ fontSize: 11, fontWeight: 600, color: clr, fontFamily: 'var(--mono)' }}>
-            {up ? '▲' : '▼'} {Math.abs(item.change ?? 0).toFixed(2)}%
+
+        {/* Right: price + change */}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <p className="num" style={{
+            fontSize: 14, fontWeight: 600,
+            color: 'var(--ink)', marginBottom: 2,
+          }}>
+            {typeof item.price === 'number'
+              ? item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: item.price > 100 ? 2 : 4 })
+              : '—'
+            }
+          </p>
+          <span className="num" style={{
+            fontSize: 11, fontWeight: 500, color: clr,
+          }}>
+            {(item.change ?? 0) >= 0 ? '+' : ''}{(item.change ?? 0).toFixed(2)}%
           </span>
         </div>
       </div>
 
       {/* Sparkline */}
-      <div style={{ width: '100%', height: 80, borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
-        {item.sparkline?.length > 0
-          ? <MarketOverview data={item.sparkline} isMini={true} color={chartHex} />
-          : <div className="shimmer" style={{ height: '100%', borderRadius: 8 }} />
-        }
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 1, background: 'var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-        {[['Open', item.open], ['High', item.high], ['Low', item.low], ['Vol', null]].map(([l, v], i) => (
-          <div key={i} style={{ background: 'var(--surface2)', padding: '10px 12px' }}>
-            <p style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>{l}</p>
-            <span style={{
-              fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 500,
-              color: l === 'High' ? 'var(--green)' : l === 'Low' ? 'var(--red)' : 'var(--ink)',
-            }}>{v != null ? v.toLocaleString() : '—'}</span>
-          </div>
-        ))}
-      </div>
+      {item.sparkline?.length > 1 && (
+        <div style={{ marginTop: 12, height: 36 }}>
+          <MarketOverview
+            data={item.sparkline}
+            color={hex}
+            height={36}
+          />
+        </div>
+      )}
     </div>
   );
 };

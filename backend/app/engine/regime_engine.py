@@ -52,7 +52,7 @@ def detect_hmm_regime(df: pd.DataFrame, n_states: int = 3, n_iter: int = 80) -> 
         return {"error": "Minimal 30 data points untuk HMM"}
 
     # ── Inisialisasi parameter HMM ──────────────────────────────
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     # Cluster awal via k-means sederhana (percentile-based)
     pct_low  = np.percentile(returns, 33)
     pct_high = np.percentile(returns, 66)
@@ -98,7 +98,8 @@ def detect_hmm_regime(df: pd.DataFrame, n_states: int = 3, n_iter: int = 80) -> 
         # Backward
         beta = np.ones((T, n_states))
         for t in range(T - 2, -1, -1):
-            beta[t] = (A * B[t+1] * beta[t+1]).sum(axis=1)
+            for i in range(n_states):
+                beta[t, i] = np.sum(A[i, :] * B[t+1, :] * beta[t+1, :])
             beta[t] /= beta[t].sum() + 1e-300
 
         # Gamma (posterior state probabilities)
@@ -183,13 +184,18 @@ def detect_vol_clustering(df: pd.DataFrame) -> Dict:
     eps     = returns - mu
     var_unc = eps.var()  # unconditional variance
 
-    # Simplified GARCH: estimate alpha + beta via autocorrelation of eps^2
+    # Simplified GARCH(1,1): moment-matching from squared-residual autocorrelation
     eps2    = eps ** 2
     ac1     = float(pd.Series(eps2).autocorr(lag=1)) if T > 2 else 0.3
-    ac1     = max(0, min(ac1, 0.98))
+    ac1     = max(0.01, min(ac1, 0.98))  # clamp to valid range
 
-    beta    = min(ac1 * 0.85, 0.88)
-    alpha   = min(ac1 * 0.15, 0.10)
+    # Moment-matching: ac1 ≈ α + β for GARCH(1,1)
+    # Split persistence into α (shock) and β (memory) via kurtosis proxy
+    persistence = min(ac1, 0.98)   # stability constraint: α + β < 1
+    kurt_ratio  = float(pd.Series(eps2).autocorr(lag=2)) / max(ac1, 0.01)
+    kurt_ratio  = max(0.05, min(kurt_ratio, 0.95))
+    alpha   = persistence * (1 - kurt_ratio)
+    beta    = persistence * kurt_ratio
     omega   = max(var_unc * (1 - alpha - beta), 1e-10)
 
     # Propagate conditional variance
@@ -297,10 +303,10 @@ def detect_liquidity_regime(df: pd.DataFrame) -> Dict:
     vol_z_current = float(vol_z.iloc[-1]) if not pd.isna(vol_z.iloc[-1]) else 0.0
 
     # Composite Liquidity Score (0-100, higher = more liquid)
-    # Amihud (lower = better), vol_z (higher = better)
-    liq_score = max(0, min(100,
-        50 - (amihud_pct - 50) * 0.5 + vol_z_current * 10
-    ))
+    # Z-score normalized: combine Amihud percentile rank (inverted) with volume z-score
+    amihud_z = (50 - amihud_pct) / 50   # [-1, 1]; higher = more liquid
+    vol_z_clipped = max(-3, min(vol_z_current, 3)) / 3  # [-1, 1]; higher = more volume
+    liq_score = max(0, min(100, 50 + 25 * amihud_z + 25 * vol_z_clipped))
 
     if liq_score > 65:
         liq_regime = "ABUNDANT"

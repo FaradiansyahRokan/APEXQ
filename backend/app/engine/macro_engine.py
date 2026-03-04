@@ -1,7 +1,6 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from hmmlearn import hmm
 
 def get_cross_asset_data():
     """Mengambil data DXY (Dollar), NASDAQ (Tech Beta), dan GOLD"""
@@ -35,31 +34,12 @@ def get_cross_asset_data():
     return data
 
 def detect_hmm_regime(df):
-    """Hidden Markov Model untuk mendeteksi 'State' Market Tersembunyi"""
-    # Ambil log returns
-    returns = np.log(df['Close'] / df['Close'].shift(1)).dropna().values.reshape(-1, 1)
-    
-    # Inisialisasi HMM dengan 3 State (Bullish, Bearish, Sideways)
-    model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=100)
-    model.fit(returns)
-    
-    # Prediksi state saat ini
-    current_state = model.predict(returns)[-1]
-    
-    # Mapping state (Secara statistik: State dengan mean tertinggi adalah Bullish)
-    means = model.means_.flatten()
-    sorted_states = np.argsort(means) # [Bearish, Sideways, Bullish]
-    
-    regime_map = {
-        sorted_states[0]: "HIGH_VOL_BEARISH",
-        sorted_states[1]: "STATIONARY_SIDEWAYS",
-        sorted_states[2]: "LOW_VOL_BULLISH"
-    }
-    
-    return {
-        "regime": regime_map.get(current_state),
-        "confidence": float(np.max(model.predict_proba(returns)[-1]) * 100)
-    }
+    """
+    Redirects to regime_engine.detect_hmm_regime() — the canonical HMM implementation.
+    This avoids duplicate HMM with inconsistent state labeling (audit finding C4).
+    """
+    from app.engine.regime_engine import detect_hmm_regime as _regime_hmm
+    return _regime_hmm(df)
 
 def calculate_factor_lab(df, ticker_df_compare):
     """Factor Research: Momentum Decay & Correlation"""
@@ -74,6 +54,8 @@ def calculate_factor_lab(df, ticker_df_compare):
     macel_val = momentum_accel.iloc[-1]
     if isinstance(macel_val, pd.Series):
         macel_val = macel_val.iloc[0]
+    if pd.isna(macel_val):
+        macel_val = 0.0
         
     # 2. Correlation with Nasdaq (Beta)
     # FIX ZONA WAKTU: Hapus timezone dari kedua data agar bisa digabungkan!

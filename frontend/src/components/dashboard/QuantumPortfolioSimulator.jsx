@@ -499,11 +499,27 @@ export default function QuantumPortfolioSimulator() {
                 <span style={{ opacity: 0.3 }}>|</span>
                 <span>Kelly Avg: {(result.summary.kelly_avg_fraction * 100).toFixed(1)}%K</span>
                 <span style={{ opacity: 0.3 }}>|</span>
+                <span style={{ color: result.summary.max_leverage_used > 1.0 ? 'var(--red)' : 'var(--gold)' }}>
+                  Max Leverage: {result.summary.max_leverage_used}x
+                </span>
+                <span style={{ opacity: 0.3 }}>|</span>
                 <span style={{ color: 'var(--gold)' }}>
-                  {result.summary.trades_filtered || 0} trades filtered by gate
+                  {result.summary.trades_filtered || 0} trades filtered
                 </span>
               </div>
             </div>
+            {result.summary.total_return_pct < -result.config.circuit_breaker_dd * 0.9 && (
+              <div style={{
+                background: 'rgba(255,68,102,0.1)', border: '1px solid var(--red)',
+                borderRadius: 8, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12
+              }}>
+                <span style={{ fontSize: 20 }}>🛑</span>
+                <div style={{ fontFamily: 'var(--mono)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase' }}>Circuit Breaker Active</div>
+                  <div style={{ fontSize: 9, color: 'var(--ink2)' }}>Simulation halted to protect capital</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Gate Quality Banner */}
@@ -558,6 +574,7 @@ export default function QuantumPortfolioSimulator() {
                 { label: "Total Trades",     value: result.summary.total_trades,             color: "var(--ink)", icon: "QTY",  sub: `${result.summary.trades_filtered||0} filtered out` },
                 { label: "Calmar Ratio",     value: result.summary.calmar_ratio.toFixed(3),  color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--gold)", icon: "CAL", sub: "≥0.5 ideal" },
                 { label: "Expectancy/Trade", value: `$${Number(result.summary.expectancy_usd).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0})}`, color: isProfit ? "var(--green)" : "var(--red)", icon: "EXP", sub: "avg per trade" },
+                { label: "Max Leverage",     value: `${result.summary.max_leverage_used}x`, color: result.summary.max_leverage_used > 1.2 ? "var(--red)" : "var(--ink)", icon: "LEV", sub: "Cap: 1.0x (Institutional)" },
               ].map(({ label, value, color, icon, sub }) => (
                 <MetricCard key={label} label={label} value={value} color={color} icon={icon} sublabel={sub} />
               ))}

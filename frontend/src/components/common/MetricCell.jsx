@@ -1,30 +1,73 @@
 import React from 'react';
 import { Label } from './Label';
 
-const COLORS = {
-  green: 'var(--green)', red: 'var(--red)', gold: 'var(--gold)',
-  blue: 'var(--blue)', purple: 'var(--purple)', amber: 'var(--amber)',
+const COLOR_MAP = {
+  green: 'var(--pos)',
+  red:   'var(--neg)',
+  // Everything else → monochromatic
+  blue:  'var(--ink)',
+  purple:'var(--ink)',
+  amber: 'var(--amber)',
+  gold:  'var(--amber)',
 };
 
-export const MetricCell = ({ label, value, color, sub, accent }) => {
-  const textColor = COLORS[color] || 'var(--ink)';
+export const MetricCell = ({ label, value, color, sub, accent, last, style: sx }) => {
+  const isPos = color === 'green';
+  const isNeg = color === 'red';
+  const isFinancial = isPos || isNeg;
+  const textColor = isFinancial
+    ? COLOR_MAP[color]
+    : color === 'amber' || color === 'gold'
+      ? 'var(--amber)'
+      : 'var(--ink)';
+
   return (
-    <div style={{
-      padding: '22px 24px',
-      borderRight: '1px solid var(--border)',
-      display: 'flex', flexDirection: 'column', gap: 10,
-      position: 'relative',
-      background: accent ? `${accent}05` : 'transparent',
-    }}>
+    <div
+      style={{
+        paddingBottom: last ? 0 : 12,
+        marginBottom: last ? 0 : 12,
+        borderBottom: last ? 'none' : '1px solid var(--border)',
+        ...sx,
+      }}
+    >
+      {label && <Label style={{ marginBottom: 5 }}>{label}</Label>}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+        <span
+          className="num"
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: textColor,
+            lineHeight: 1,
+          }}
+        >
+          {value}
+        </span>
+        {sub && (
+          <span style={{ fontSize: 10, color: 'var(--ink4)', fontFamily: 'var(--mono)' }}>
+            {sub}
+          </span>
+        )}
+      </div>
       {accent && (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 1, background: `linear-gradient(90deg, ${accent}60, transparent)` }} />
+        <div style={{
+          marginTop: 6,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <div style={{ flex: 1, height: 2, background: 'var(--surface3)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, Math.max(0, accent))}%`,
+              background: isFinancial ? textColor : 'var(--ink3)',
+              borderRadius: 2,
+              transition: 'width .8s cubic-bezier(.22,1,.36,1)',
+            }} />
+          </div>
+          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--ink4)', flexShrink: 0 }}>
+            {accent.toFixed(1)}%
+          </span>
+        </div>
       )}
-      <Label>{label}</Label>
-      <p style={{
-        fontSize: 26, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1,
-        color: textColor, fontFamily: 'var(--font)', fontVariantNumeric: 'tabular-nums',
-      }}>{value ?? '—'}</p>
-      {sub && <span style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'var(--mono)' }}>{sub}</span>}
     </div>
   );
 };

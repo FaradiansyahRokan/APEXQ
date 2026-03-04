@@ -1,18 +1,35 @@
 import React from 'react';
-export const IndicatorButton = ({ label, active, color, onClick }) => {
-  const c = color === 'blue' ? '#5EA0F5' : color === 'orange' ? '#F0A030' : color === 'gold' ? '#C9A96E' : 'var(--ink2)';
-  return (
-    <button onClick={onClick} style={{
-      background: active ? `${c}12` : 'transparent',
-      border: `1px solid ${active ? `${c}40` : 'transparent'}`,
-      borderRadius: 5, padding: '4px 11px',
-      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: active ? 500 : 400,
-      letterSpacing: '0.1em', textTransform: 'uppercase',
-      color: active ? c : 'var(--ink3)',
-      transition: 'all .15s ease', whiteSpace: 'nowrap',
+
+export const IndicatorButton = ({ label, active, onClick, color }) => (
+  <button
+    onClick={onClick}
+    style={{
+      padding: '5px 10px',
+      borderRadius: 'var(--radius-sm)',
+      border: `1px solid ${active ? 'var(--border2)' : 'var(--border)'}`,
+      background: active ? 'var(--surface3)' : 'transparent',
+      color: active ? 'var(--ink)' : 'var(--ink3)',
+      fontFamily: 'var(--mono)',
+      fontSize: 10,
+      fontWeight: 500,
+      letterSpacing: '0.07em',
+      textTransform: 'uppercase',
+      cursor: 'pointer',
+      transition: 'all .15s',
     }}
-    onMouseEnter={e => { if (!active) e.currentTarget.style.color = 'var(--ink2)'; }}
-    onMouseLeave={e => { if (!active) e.currentTarget.style.color = 'var(--ink3)'; }}
-    >{label}</button>
-  );
-};
+    onMouseEnter={e => {
+      if (!active) {
+        e.currentTarget.style.borderColor = 'var(--border2)';
+        e.currentTarget.style.color = 'var(--ink2)';
+      }
+    }}
+    onMouseLeave={e => {
+      if (!active) {
+        e.currentTarget.style.borderColor = 'var(--border)';
+        e.currentTarget.style.color = 'var(--ink3)';
+      }
+    }}
+  >
+    {label}
+  </button>
+);

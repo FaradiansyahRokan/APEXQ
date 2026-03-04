@@ -1,36 +1,68 @@
 import React from 'react';
 
-const timeAgo = (ts) => {
+const relTime = (ts) => {
   if (!ts) return '';
   const t = typeof ts === 'string' ? ts : null;
   if (t && isNaN(Number(t))) return t;
   const diff = (Date.now() / 1000) - Number(ts);
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
 };
 
 export const NewsItem = ({ title, publisher, time, link }) => (
-  <a href={link} target="_blank" rel="noopener noreferrer">
-    <div style={{
-      padding: '13px 0', borderBottom: '1px solid var(--border)',
-      transition: 'padding-left .15s ease', cursor: 'pointer',
+  <a
+    href={link || '#'}
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{
+      display: 'block',
+      padding: '11px 0',
+      borderBottom: '1px solid var(--border)',
+      textDecoration: 'none',
+      color: 'inherit',
+      cursor: link ? 'pointer' : 'default',
     }}
     onMouseEnter={e => {
-      e.currentTarget.style.paddingLeft = '10px';
-      e.currentTarget.style.borderLeft = '2px solid var(--gold)';
-      e.currentTarget.style.marginLeft = '-2px';
+      e.currentTarget.querySelector('.news-title').style.color = 'var(--ink)';
     }}
     onMouseLeave={e => {
-      e.currentTarget.style.paddingLeft = '0';
-      e.currentTarget.style.borderLeft = 'none';
-      e.currentTarget.style.marginLeft = '0';
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, gap: 12 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--gold)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{publisher}</span>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink3)', whiteSpace: 'nowrap' }}>{timeAgo(time)}</span>
-      </div>
-      <p style={{ fontSize: 12, fontWeight: 400, lineHeight: 1.6, color: 'var(--ink2)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</p>
+      e.currentTarget.querySelector('.news-title').style.color = 'var(--ink2)';
+    }}
+  >
+    <p
+      className="news-title"
+      style={{
+        fontSize: 12,
+        fontWeight: 500,
+        lineHeight: 1.45,
+        color: 'var(--ink2)',
+        marginBottom: 5,
+        transition: 'color .15s',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}
+    >
+      {title}
+    </p>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {publisher && (
+        <span style={{
+          fontSize: 10, fontFamily: 'var(--mono)',
+          color: 'var(--ink4)', fontWeight: 400,
+        }}>{publisher}</span>
+      )}
+      {publisher && time && (
+        <span style={{ width: 2, height: 2, borderRadius: '50%', background: 'var(--ink5)', flexShrink: 0 }} />
+      )}
+      {time && (
+        <span style={{
+          fontSize: 10, fontFamily: 'var(--mono)',
+          color: 'var(--ink4)',
+        }}>{relTime(time)}</span>
+      )}
     </div>
   </a>
 );
