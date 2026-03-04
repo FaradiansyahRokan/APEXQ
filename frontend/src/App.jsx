@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { API } from "../config";
+import { API } from "./config";
 
 import { FontInjector, GlobalStyles, ThemeProvider, ThemeToggle, Divider, formatPrice } from "./components/common/GlobalStyles";
 import { Label }             from "./components/common/Label";
