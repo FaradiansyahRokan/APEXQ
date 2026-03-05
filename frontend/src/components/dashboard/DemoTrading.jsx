@@ -1482,7 +1482,7 @@ export default function DemoTrading() {
                 <div>
                   <div style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 100px 110px 80px 1fr', padding: '8px 16px', borderBottom: '1px solid var(--border)', gap: 4 }}>
                     {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
-                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
+                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
                     ))}
                   </div>
                   {openPos.map(pos => {
