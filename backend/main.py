@@ -68,6 +68,15 @@ import json
 import uvicorn
 import traceback
 from app.engine.hft_engine import hft_spider
+
+# ── Rapid Scalper (Jackal) ────────────────────────────────────────
+try:
+    from app.engine.hft_rapid_scalper import rapid_scalper
+except ImportError:
+    try:
+        from hft_rapid_scalper import rapid_scalper
+    except ImportError:
+        rapid_scalper = None
 import asyncio
 
 
@@ -2735,6 +2744,116 @@ async def hft_websocket(websocket: WebSocket):
         pass
     except Exception:
         pass
+
+# ══════════════════════════════════════════════════════════════════
+#  RAPID SCALPER (JACKAL) — /api/hft-rapid/*
+#  Momentum-burst scalper, berbeda filosofi dari HFT Spider (Predator)
+# ══════════════════════════════════════════════════════════════════
+
+@app.post("/api/hft-rapid/start")
+async def rapid_start(body: dict = {}):
+    """Start Rapid Scalper engine."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    balance = float(body.get("balance", 1000.0))
+    if not rapid_scalper.running:
+        rapid_scalper.set_balance(balance)
+    await rapid_scalper.start()
+    return {"ok": True, "message": "Rapid Scalper (Jackal) started", "balance": rapid_scalper.balance}
+
+
+@app.post("/api/hft-rapid/stop")
+async def rapid_stop():
+    """Stop Rapid Scalper and close all positions."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    await rapid_scalper.stop()
+    return {"ok": True, "message": "Rapid Scalper stopped"}
+
+
+@app.post("/api/hft-rapid/reset")
+async def rapid_reset(body: dict = {}):
+    """Full reset — stop, clear all state, reinitialize."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    await rapid_scalper.stop()
+    balance = float(body.get("balance", 1000.0))
+    rapid_scalper.reset_full()
+    rapid_scalper.set_balance(balance)
+    return {"ok": True, "message": "Rapid Scalper reset", "balance": balance}
+
+
+@app.post("/api/hft-rapid/config")
+async def rapid_config(body: dict):
+    """Update engine config on the fly (even while running)."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    rapid_scalper.configure(body)
+    return {"ok": True, "config": body}
+
+
+@app.get("/api/hft-rapid/status")
+async def rapid_status():
+    """Full status: positions, vault, stats, burst snapshot, events."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    return rapid_scalper.get_status()
+
+
+@app.post("/api/hft-rapid/close/{position_id}")
+async def rapid_close_position(position_id: str):
+    """Manually close a specific position by ID."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    pos = rapid_scalper.positions.get(position_id)
+    if not pos or pos.status != "OPEN":
+        return {"ok": False, "error": "Position not found or already closed"}
+    rapid_scalper._close_position(pos, "MANUAL")
+    return {"ok": True, "message": f"Position {position_id} closed"}
+
+
+@app.post("/api/hft-rapid/close-all")
+async def rapid_close_all():
+    """Manually close all open positions."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    closed = 0
+    for pos in list(rapid_scalper.positions.values()):
+        if pos.status == "OPEN":
+            rapid_scalper._close_position(pos, "MANUAL")
+            closed += 1
+    return {"ok": True, "closed": closed}
+
+
+@app.post("/api/hft-rapid/vault-resume")
+async def rapid_vault_resume():
+    """Manually resume trading after vault halt (use after reviewing situation)."""
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    rapid_scalper.reset_vault()
+    return {"ok": True, "message": "Vault resumed — trading unblocked"}
+
+
+@app.websocket("/ws/hft-rapid")
+async def rapid_websocket(websocket: WebSocket):
+    """
+    WebSocket — push status updates setiap 1s.
+    Lebih cepat dari Predator WS (1.5s) karena frekuensi lebih tinggi.
+    """
+    if rapid_scalper is None:
+        await websocket.close()
+        return
+    await websocket.accept()
+    try:
+        while True:
+            status = rapid_scalper.get_status()
+            await websocket.send_json(status)
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
 
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT

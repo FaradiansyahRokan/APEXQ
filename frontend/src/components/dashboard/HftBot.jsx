@@ -1,8 +1,8 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
- * ║  APEX PREDATOR HFT  ·  v3.0                                     ║
- * ║  Design: matches GlobalStyles zinc system · dark/light ready     ║
- * ║  Feature: Position Finder — visual entry locator per coin        ║
+ * ║  APEX HFT  ·  v4.0  —  Dual Engine                              ║
+ * ║  🕷 Predator  →  mean-reversion VWAP microstructure             ║
+ * ║  🐺 Jackal   →  micro-momentum burst scalper                    ║
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
@@ -11,6 +11,57 @@ import axios from 'axios';
 
 import { API as _API, WS_URL } from '../../config';
 const API = _API;
+
+// ─── Engine definitions ───────────────────────────────────────────────────────
+const ENGINES = {
+  predator: {
+    id       : 'predator',
+    name     : 'Predator',
+    emoji    : '🕷',
+    subtitle : 'Mean-reversion · VWAP microstructure',
+    strategy : 'mean_reversion',
+    badge    : 'v2',
+    color    : 'var(--ink)',           // neutral / system color
+    apiBase  : '/api/hft',
+    wsPath   : '/ws/hft',
+    defaultCfg: {
+      max_positions    : 3,
+      capital_per_trade: 100,
+      zscore_entry     : 1.8,
+      atr_stop_mult    : 1.5,
+      min_rr_ratio     : 2.5,
+      max_hold_seconds : 60,
+      scan_interval    : 0.5,
+      long_bias        : false,
+    },
+  },
+  jackal: {
+    id       : 'jackal',
+    name     : 'Jackal',
+    emoji    : '🐺',
+    subtitle : 'Micro-momentum burst · 3-tick streak entry',
+    strategy : 'micro_momentum_burst',
+    badge    : 'v1',
+    color    : 'var(--amber)',
+    apiBase  : '/api/hft-rapid',
+    wsPath   : '/ws/hft-rapid',
+    defaultCfg: {
+      max_positions      : 5,
+      capital_per_trade  : 50,
+      min_streak         : 3,
+      min_move_pct       : 0.020,
+      ofi_floor          : 0.35,
+      ofi_ceiling        : 0.65,
+      tp_pct             : 0.10,
+      sl_pct             : 0.07,
+      max_hold_seconds   : 10,
+      scan_interval      : 0.07,
+      max_daily_dd_pct   : 3.0,
+      lock_step_pct      : 0.50,
+      lock_ratio         : 0.60,
+    },
+  },
+};
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt    = (n, d = 2)  => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -53,129 +104,122 @@ const Spark = ({ data = [], w = 140, h = 44 }) => {
   );
 };
 
-// ─── Position level chart (price ladder visual) ───────────────────────────────
-const PriceLadder = ({ entry, stop, tp, current, coin }) => {
+// ─── Price Ladder ─────────────────────────────────────────────────────────────
+const PriceLadder = ({ entry, stop, tp, current }) => {
   if (!entry || !current) return null;
   const isLong = tp > entry;
-
-  // normalise to visible range
   const allPx  = [entry, stop, tp, current].filter(Boolean);
   const lo     = Math.min(...allPx) * 0.9995;
   const hi     = Math.max(...allPx) * 1.0005;
   const range  = hi - lo || 1;
   const pct    = v => ((v - lo) / range) * 100;
-
   const levels = [
-    { label: 'TP',      price: tp,      color: 'var(--pos)',    pct: pct(tp) },
-    { label: 'Entry',   price: entry,   color: 'var(--ink2)',   pct: pct(entry) },
-    { label: 'Stop',    price: stop,    color: 'var(--neg)',    pct: pct(stop) },
-    { label: 'Now',     price: current, color: 'var(--amber)',  pct: pct(current) },
+    { label: 'TP',    price: tp,      color: 'var(--pos)',   pct: pct(tp) },
+    { label: 'Entry', price: entry,   color: 'var(--ink2)',  pct: pct(entry) },
+    { label: 'Stop',  price: stop,    color: 'var(--neg)',   pct: pct(stop) },
+    { label: 'Now',   price: current, color: 'var(--amber)', pct: pct(current) },
   ].filter(l => l.price).sort((a, b) => b.pct - a.pct);
-
   const rr = tp && stop && entry
     ? Math.abs((tp - entry) / (entry - stop)).toFixed(2)
     : null;
-
   return (
     <div style={{ display:'flex', gap: 16, alignItems:'center' }}>
-      {/* Vertical ladder */}
       <div style={{ position:'relative', width: 8, height: 90, flexShrink:0 }}>
-        {/* Background track */}
-        <div style={{
-          position:'absolute', left: 3, top: 0, bottom: 0, width: 2,
-          background:'var(--surface3)', borderRadius: 2,
-        }}/>
-        {/* Fill: stop → tp */}
+        <div style={{ position:'absolute', left: 3, top: 0, bottom: 0, width: 2,
+          background:'var(--surface3)', borderRadius: 2 }}/>
         {stop && tp && (
-          <div style={{
-            position:'absolute', left: 3, width: 2, borderRadius: 2,
+          <div style={{ position:'absolute', left: 3, width: 2, borderRadius: 2,
             background: isLong ? 'var(--pos-dim)' : 'var(--neg-dim)',
             top: `${100 - pct(isLong ? tp : stop)}%`,
-            bottom: `${pct(isLong ? stop : tp)}%`,
-          }}/>
+            bottom: `${pct(isLong ? stop : tp)}%` }}/>
         )}
-        {/* Current price tick */}
         {levels.map(l => (
-          <div key={l.label} style={{
-            position:'absolute', left: 0, width: 8, height: 2,
+          <div key={l.label} style={{ position:'absolute', left: 0, width: 8, height: 2,
             background: l.color, borderRadius: 1,
-            top: `${100 - l.pct}%`,
-            transform: 'translateY(-50%)',
-            boxShadow: l.label === 'Now' ? `0 0 5px ${l.color}` : 'none',
-          }}/>
+            top: `${100 - l.pct}%`, transform: 'translateY(-50%)',
+            boxShadow: l.label === 'Now' ? `0 0 5px ${l.color}` : 'none' }}/>
         ))}
       </div>
-
-      {/* Labels */}
       <div style={{ flex:1, position:'relative', height: 90 }}>
         {levels.map(l => (
-          <div key={l.label} style={{
-            position:'absolute', width:'100%',
+          <div key={l.label} style={{ position:'absolute', width:'100%',
             top: `${100 - l.pct}%`, transform:'translateY(-50%)',
-            display:'flex', justifyContent:'space-between', alignItems:'center',
-          }}>
-            <span style={{
-              fontFamily:'var(--mono)', fontSize: 8,
+            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontFamily:'var(--mono)', fontSize: 8,
               textTransform:'uppercase', letterSpacing:'0.09em',
               color: l.label === 'Now' ? l.color : 'var(--ink4)',
-              fontWeight: l.label === 'Now' ? 700 : 400,
-            }}>{l.label}</span>
-            <span style={{
-              fontFamily:'var(--mono)', fontSize: 9, fontWeight: 600,
-              color: l.color, letterSpacing:'-0.01em',
-            }}>
+              fontWeight: l.label === 'Now' ? 700 : 400 }}>{l.label}</span>
+            <span style={{ fontFamily:'var(--mono)', fontSize: 9, fontWeight: 600,
+              color: l.color, letterSpacing:'-0.01em' }}>
               {l.price >= 1 ? `$${fmt(l.price, 2)}` : `$${l.price.toFixed(5)}`}
             </span>
           </div>
         ))}
       </div>
-
       {rr && (
-        <div style={{
-          display:'flex', flexDirection:'column', alignItems:'center',
-          gap: 3, paddingLeft: 8, borderLeft:'1px solid var(--border)',
-        }}>
-          <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)', textTransform:'uppercase', letterSpacing:'0.1em' }}>R:R</span>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
+          gap: 3, paddingLeft: 8, borderLeft:'1px solid var(--border)' }}>
+          <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)',
+            textTransform:'uppercase', letterSpacing:'0.1em' }}>R:R</span>
           <span style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
-            color: parseFloat(rr) >= 2 ? 'var(--pos)' : 'var(--amber)',
-          }}>1:{rr}</span>
+            color: parseFloat(rr) >= 2 ? 'var(--pos)' : 'var(--amber)' }}>1:{rr}</span>
         </div>
       )}
     </div>
   );
 };
 
-// ─── Live dot ──────────────────────────────────────────────────────────────────
+// ─── Engine Mode Toggle ───────────────────────────────────────────────────────
+const EnginePill = ({ engineMode, onChange, running }) => (
+  <div style={{
+    display:'flex', gap: 4,
+    background:'var(--surface2)', border:'1px solid var(--border)',
+    borderRadius:'var(--radius)', padding: 3,
+    opacity: running ? 0.5 : 1,
+    pointerEvents: running ? 'none' : 'auto',
+    title: running ? 'Stop engine before switching' : '',
+  }}>
+    {Object.values(ENGINES).map(eng => {
+      const active = engineMode === eng.id;
+      return (
+        <button key={eng.id} onClick={() => onChange(eng.id)} style={{
+          background: active ? 'var(--surface4)' : 'transparent',
+          border: active ? '1px solid var(--border2)' : '1px solid transparent',
+          borderRadius: 'calc(var(--radius) - 3px)',
+          padding:'5px 12px', cursor:'pointer',
+          fontFamily:'var(--mono)', fontSize: 10, fontWeight: active ? 700 : 500,
+          color: active ? 'var(--ink)' : 'var(--ink4)',
+          letterSpacing:'0.05em', transition:'all .15s', whiteSpace:'nowrap',
+        }}>
+          {eng.emoji} {eng.name}
+        </button>
+      );
+    })}
+  </div>
+);
+
+// ─── Live dot ─────────────────────────────────────────────────────────────────
 const LiveDot = ({ on }) => (
   <span style={{
-    display:'inline-block', width: 6, height: 6,
-    borderRadius:'50%', flexShrink: 0,
+    display:'inline-block', width: 6, height: 6, borderRadius:'50%', flexShrink: 0,
     background: on ? 'var(--pos)' : 'var(--surface4)',
     boxShadow: on ? '0 0 0 3px var(--pos-dim)' : 'none',
   }} className={on ? 'pulse' : ''}/>
 );
 
-// ─── Direction badge ───────────────────────────────────────────────────────────
 const DirBadge = ({ d }) => (
   <span className={`badge ${d === 'LONG' ? 'badge-green' : 'badge-red'}`}>{d}</span>
 );
 
-// ─── Exit badge ────────────────────────────────────────────────────────────────
 const ExitBadge = ({ r }) => {
-  const map = {
-    TP: 'badge-green', TAKE_PROFIT: 'badge-green',
-    STOP: 'badge-red', HARD_STOP: 'badge-red',
-    TIMEOUT: 'badge-amber',
-    MANUAL: 'badge-muted', TRAILING: 'badge-muted',
-  };
-  const labels = {
-    TP:'TP', TAKE_PROFIT:'TP', STOP:'Stop', HARD_STOP:'Hard Stop',
-    TIMEOUT:'Timeout', MANUAL:'Manual', TRAILING:'Trail',
-  };
+  const map = { TP:'badge-green', TAKE_PROFIT:'badge-green', STOP:'badge-red',
+    HARD_STOP:'badge-red', TIMEOUT:'badge-amber', MANUAL:'badge-muted', TRAILING:'badge-muted',
+    FLIP:'badge-amber', VAULT_HALT:'badge-red' };
+  const labels = { TP:'TP', TAKE_PROFIT:'TP', STOP:'Stop', HARD_STOP:'Hard Stop',
+    TIMEOUT:'Timeout', MANUAL:'Manual', TRAILING:'Trail', FLIP:'Flip', VAULT_HALT:'Vault' };
   return <span className={`badge ${map[r] || 'badge-muted'}`}>{labels[r] || r}</span>;
 };
 
-// ─── Inline stat ───────────────────────────────────────────────────────────────
 const Stat = ({ label, value, color }) => (
   <div>
     <div style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.1em',
@@ -186,20 +230,16 @@ const Stat = ({ label, value, color }) => (
   </div>
 );
 
-// ─── Config number input ───────────────────────────────────────────────────────
 const CfgInput = ({ label, hint, value, step, min, max, onChange }) => (
   <div>
     <div style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.09em',
       textTransform:'uppercase', color:'var(--ink3)', marginBottom: 5 }}>{label}</div>
     <input type="number" value={value} step={step} min={min} max={max}
       onChange={e => onChange(Number(e.target.value))}
-      style={{
-        width:'100%', background:'var(--surface2)',
+      style={{ width:'100%', background:'var(--surface2)',
         border:'1px solid var(--border)', borderRadius:'var(--radius-sm)',
         padding:'8px 10px', fontFamily:'var(--mono)', fontSize: 12,
-        fontWeight: 500, color:'var(--ink)', outline:'none',
-        transition:'border-color .15s',
-      }}
+        fontWeight: 500, color:'var(--ink)', outline:'none', transition:'border-color .15s' }}
       onFocus={e  => e.target.style.borderColor = 'var(--border3)'}
       onBlur={e   => e.target.style.borderColor = 'var(--border)'}
     />
@@ -207,22 +247,16 @@ const CfgInput = ({ label, hint, value, step, min, max, onChange }) => (
   </div>
 );
 
-// ─── Toggle switch ─────────────────────────────────────────────────────────────
 const Toggle = ({ on, onChange, label, hint }) => (
   <div style={{ display:'flex', alignItems:'flex-start', gap: 12 }}>
-    <div onClick={onChange} style={{
-      width: 36, height: 20, borderRadius: 10, cursor:'pointer',
+    <div onClick={onChange} style={{ width: 36, height: 20, borderRadius: 10, cursor:'pointer',
       position:'relative', flexShrink: 0, marginTop: 1,
       background: on ? 'var(--pos)' : 'var(--surface4)',
       border:`1px solid ${on ? 'var(--pos-b)' : 'var(--border2)'}`,
-      transition:'background .2s, border-color .2s',
-    }}>
-      <div style={{
-        position:'absolute', top: 3, width: 12, height: 12,
+      transition:'background .2s, border-color .2s' }}>
+      <div style={{ position:'absolute', top: 3, width: 12, height: 12,
         borderRadius: 6, background:'var(--ink)',
-        left: on ? 19 : 3, transition:'left .2s',
-        boxShadow:'0 1px 3px rgba(0,0,0,.25)',
-      }}/>
+        left: on ? 19 : 3, transition:'left .2s', boxShadow:'0 1px 3px rgba(0,0,0,.25)' }}/>
     </div>
     <div>
       <div style={{ fontSize: 11, fontWeight: 500, color:'var(--ink2)', marginBottom: 2 }}>{label}</div>
@@ -231,7 +265,6 @@ const Toggle = ({ on, onChange, label, hint }) => (
   </div>
 );
 
-// ─── Section label ─────────────────────────────────────────────────────────────
 const SecLabel = ({ children, right }) => (
   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 13 }}>
     <span style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.14em',
@@ -245,32 +278,46 @@ const SecLabel = ({ children, right }) => (
 //  MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function HFTBot({ initialBalance = 1000 }) {
-  const [status,    setStatus]    = useState(null);
-  const [running,   setRunning]   = useState(false);
-  const [loading,   setLoading]   = useState(false);
-  const [tab,       setTab]       = useState('positions');
-  const [balance,   setBalance]   = useState(initialBalance);
-  const [flash,     setFlash]     = useState(null);
-  const [expandPos, setExpandPos] = useState(null); // expanded position id
+  const [engineMode, setEngineMode] = useState('predator');
+  const [status,     setStatus]     = useState(null);
+  const [running,    setRunning]    = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [tab,        setTab]        = useState('positions');
+  const [balance,    setBalance]    = useState(initialBalance);
+  const [flash,      setFlash]      = useState(null);
+  const [expandPos,  setExpandPos]  = useState(null);
 
-  const [cfg, setCfg] = useState({
-    max_positions    : 3,
-    capital_per_trade: 100,
-    zscore_entry     : 1.8,
-    atr_stop_mult    : 1.5,
-    min_rr_ratio     : 2.5,
-    max_hold_seconds : 60,
-    scan_interval    : 0.5,
-    long_bias        : false,
-  });
+  // Per-engine config state
+  const [predCfg, setPredCfg] = useState(ENGINES.predator.defaultCfg);
+  const [jackCfg, setJackCfg] = useState(ENGINES.jackal.defaultCfg);
+
+  const eng  = ENGINES[engineMode];
+  const cfg  = engineMode === 'predator' ? predCfg : jackCfg;
+  const setCfg = engineMode === 'predator'
+    ? fn => setPredCfg(c => typeof fn === 'function' ? fn(c) : fn)
+    : fn => setJackCfg(c => typeof fn === 'function' ? fn(c) : fn);
 
   const wsRef     = useRef(null);
   const prevCount = useRef(0);
+  const prevMode  = useRef(engineMode);
 
-  // ─── WebSocket ──────────────────────────────────────────────────────────────
+  // ─── Reset state when engine switches ─────────────────────────────────────
+  useEffect(() => {
+    if (prevMode.current !== engineMode) {
+      prevMode.current = engineMode;
+      setStatus(null);
+      setRunning(false);
+      setTab('positions');
+      prevCount.current = 0;
+      // Reconnect WS to new engine
+      wsRef.current?.close();
+    }
+  }, [engineMode]);
+
+  // ─── WebSocket ─────────────────────────────────────────────────────────────
   const connectWS = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    const ws = new WebSocket(`${WS_URL}/ws/hft`);
+    const ws = new WebSocket(`${WS_URL}${eng.wsPath}`);
     ws.onclose   = () => setTimeout(connectWS, 3000);
     ws.onerror   = () => ws.close();
     ws.onmessage = (e) => {
@@ -289,35 +336,69 @@ export default function HFTBot({ initialBalance = 1000 }) {
       } catch {}
     };
     wsRef.current = ws;
-  }, []);
-
-  useEffect(() => { connectWS(); return () => wsRef.current?.close(); }, [connectWS]);
+  }, [eng.wsPath]);
 
   useEffect(() => {
+    wsRef.current?.close();
+    connectWS();
+    return () => wsRef.current?.close();
+  }, [connectWS]);
+
+  // Fallback polling
+  useEffect(() => {
     const id = setInterval(async () => {
-      try { const { data } = await axios.get(`${API}/api/hft/status`); setStatus(data); setRunning(data.running); } catch {}
+      try {
+        const { data } = await axios.get(`${API}${eng.apiBase}/status`);
+        setStatus(data); setRunning(data.running);
+      } catch {}
     }, 2000);
     return () => clearInterval(id);
-  }, []);
+  }, [eng.apiBase]);
 
-  // ─── Controls ───────────────────────────────────────────────────────────────
+  // ─── Controls ─────────────────────────────────────────────────────────────
+  const showFlash = (msg, pos = true) => {
+    setFlash({ msg, pos });
+    setTimeout(() => setFlash(null), 2500);
+  };
+
   const startBot = async () => {
     setLoading(true);
-    try { await axios.post(`${API}/api/hft/config`, cfg); await axios.post(`${API}/api/hft/start`, { balance }); setRunning(true); }
-    catch (e) { alert('Start failed: ' + (e?.response?.data?.detail || e.message)); }
+    try {
+      await axios.post(`${API}${eng.apiBase}/config`, cfg);
+      await axios.post(`${API}${eng.apiBase}/start`, { balance });
+      setRunning(true);
+    } catch (e) { alert('Start failed: ' + (e?.response?.data?.detail || e.message)); }
     setLoading(false);
   };
-  const stopBot   = async () => { setLoading(true); try { await axios.post(`${API}/api/hft/stop`); setRunning(false); } catch {} setLoading(false); };
-  const resetBot  = async () => { if (!confirm('Reset all trades and balance?')) return; await axios.post(`${API}/api/hft/reset`, { balance }); setRunning(false); setStatus(null); };
-  const closeAll  = async () => axios.post(`${API}/api/hft/close-all`);
-  const closeOne  = async (id) => axios.post(`${API}/api/hft/close/${id}`);
-  const resetCB   = async () => axios.post(`${API}/api/hft/reset-cb`);
-  const applyConfig = async () => {
-    await axios.post(`${API}/api/hft/config`, cfg);
-    setFlash({ msg:'Config applied', pos:true });
-    setTimeout(() => setFlash(null), 2000);
+
+  const stopBot = async () => {
+    setLoading(true);
+    try { await axios.post(`${API}${eng.apiBase}/stop`); setRunning(false); } catch {}
+    setLoading(false);
   };
 
+  const resetBot = async () => {
+    if (!confirm('Reset all trades and balance?')) return;
+    await axios.post(`${API}${eng.apiBase}/reset`, { balance });
+    setRunning(false); setStatus(null);
+  };
+
+  const closeAll  = async () => axios.post(`${API}${eng.apiBase}/close-all`);
+  const closeOne  = async (id) => axios.post(`${API}${eng.apiBase}/close/${id}`);
+  const resetCB   = async () => axios.post(`${API}${eng.apiBase}/reset-cb`);
+
+  // Jackal-only: vault resume
+  const vaultResume = async () => {
+    await axios.post(`${API}${eng.apiBase}/vault-resume`);
+    showFlash('Vault resumed', true);
+  };
+
+  const applyConfig = async () => {
+    await axios.post(`${API}${eng.apiBase}/config`, cfg);
+    showFlash('Config applied ✓', true);
+  };
+
+  // ─── Data extraction ───────────────────────────────────────────────────────
   const st      = status?.stats || {};
   const equity  = status?.total_equity   ?? balance;
   const pnl     = status?.total_pnl      ?? 0;
@@ -325,22 +406,29 @@ export default function HFTBot({ initialBalance = 1000 }) {
   const cb      = status?.circuit_breaker;
   const openPos = status?.open_positions || [];
   const logs    = status?.trade_log      || [];
-  const ms      = status?.microstructure || [];
   const events  = status?.events         || [];
 
+  // Predator-specific
+  const ms      = status?.microstructure || [];
+  // Jackal-specific
+  const vault   = status?.vault          || null;
+  const burst   = status?.burst_snapshot || [];
+  const lossPause = status?.loss_pause_active;
+  const jackalCB  = vault?.is_halted;
+
   const TABS = [
-    { id:'positions', label:'Positions',     count: openPos.length },
-    { id:'finder',    label:'Position Finder', count: null },
-    { id:'scanner',   label:'Scanner',       count: null },
-    { id:'log',       label:'History',       count: logs.length },
-    { id:'stats',     label:'Stats',         count: null },
-    { id:'config',    label:'Config',        count: null },
+    { id:'positions', label:'Positions',                         count: openPos.length },
+    { id:'finder',    label: engineMode === 'predator' ? 'Position Finder' : 'Burst Scanner', count: null },
+    { id:'log',       label:'History',                           count: logs.length },
+    { id:'stats',     label:'Stats',                             count: null },
+    ...(engineMode === 'jackal' ? [{ id:'vault', label:'Vault', count: null }] : []),
+    { id:'config',    label:'Config',                            count: null },
   ];
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap: 10 }}>
 
-      {/* ── Flash toast ─────────────────────────────────────────────────────── */}
+      {/* ── Flash toast ───────────────────────────────────────────────────── */}
       {flash && (
         <div className="fade-up" style={{
           position:'fixed', bottom: 28, left:'50%', transform:'translateX(-50%)',
@@ -352,43 +440,66 @@ export default function HFTBot({ initialBalance = 1000 }) {
         }}>{flash.msg}</div>
       )}
 
-      {/* ── Circuit breaker banner ───────────────────────────────────────────── */}
-      {cb?.tripped && (
+      {/* ── Circuit breaker / Vault halt banner ───────────────────────────── */}
+      {(cb?.tripped || jackalCB) && (
         <div className="card fade-up" style={{
           padding:'12px 16px', display:'flex', alignItems:'center', gap: 12,
           background:'var(--neg-dim)', borderColor:'var(--neg-b)',
         }}>
           <span>⛔</span>
           <div style={{ flex:1 }}>
-            <div style={{ fontFamily:'var(--mono)', fontSize: 10, fontWeight: 700, color:'var(--neg)', marginBottom: 2 }}>
-              Circuit Breaker Active
+            <div style={{ fontFamily:'var(--mono)', fontSize: 10, fontWeight: 700,
+              color:'var(--neg)', marginBottom: 2 }}>
+              {jackalCB ? 'Vault Halt Active' : 'Circuit Breaker Active'}
             </div>
-            <div style={{ fontSize: 11, color:'var(--ink3)' }}>{cb.reason}</div>
+            <div style={{ fontSize: 11, color:'var(--ink3)' }}>
+              {jackalCB ? (vault?.halt_reason || 'Equity floor protection') : cb?.reason}
+            </div>
           </div>
-          <button className="tab-btn" onClick={resetCB} style={{ fontSize: 10 }}>Reset</button>
+          {jackalCB
+            ? <button className="tab-btn" onClick={vaultResume} style={{ fontSize: 10 }}>Resume Vault</button>
+            : <button className="tab-btn" onClick={resetCB} style={{ fontSize: 10 }}>Reset CB</button>
+          }
         </div>
       )}
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Loss pause banner (Jackal-only) ───────────────────────────────── */}
+      {engineMode === 'jackal' && lossPause && (
+        <div className="card fade-up" style={{
+          padding:'10px 16px', display:'flex', alignItems:'center', gap: 10,
+          background:'var(--amber-dim, rgba(245,158,11,.08))', borderColor:'var(--amber)',
+        }}>
+          <span>⏸</span>
+          <div style={{ fontSize: 11, color:'var(--ink3)', flex:1 }}>
+            Loss pause active — Jackal pausing after streak. Auto-resumes in ~60s.
+          </div>
+          <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--amber)' }}>PAUSED</span>
+        </div>
+      )}
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="card" style={{ padding:'16px 20px' }}>
         <div style={{ display:'flex', alignItems:'center', gap: 14 }}>
 
-          {/* Identity */}
-          <div style={{ display:'flex', alignItems:'center', gap: 10, flex: 1, minWidth: 0 }}>
-            <LiveDot on={running}/>
-            <div>
-              <div style={{ fontFamily:'var(--mono)', fontSize: 12, fontWeight: 700,
-                letterSpacing:'0.08em', color:'var(--ink)', lineHeight: 1.1 }}>
-                Predator HFT
+          {/* Engine toggle + identity */}
+          <div style={{ display:'flex', flexDirection:'column', gap: 8, flex: 1, minWidth: 0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
+              <LiveDot on={running}/>
+              <div>
+                <div style={{ fontFamily:'var(--mono)', fontSize: 12, fontWeight: 700,
+                  letterSpacing:'0.08em', color:'var(--ink)', lineHeight: 1.1 }}>
+                  {eng.emoji} {eng.name} HFT
+                </div>
+                <div style={{ fontSize: 10, color:'var(--ink4)', marginTop: 2 }}>
+                  {running ? eng.subtitle : 'Idle — ready to deploy'}
+                </div>
               </div>
-              <div style={{ fontSize: 10, color:'var(--ink4)', marginTop: 2 }}>
-                {running ? 'Mean-reversion · VWAP microstructure' : 'Idle — ready to deploy'}
-              </div>
+              {running
+                ? <span className="badge badge-green" style={{ marginLeft: 4 }}>Live</span>
+                : <span className="badge badge-muted" style={{ marginLeft: 4 }}>{eng.badge}</span>
+              }
             </div>
-            {running
-              ? <span className="badge badge-green" style={{ marginLeft: 4 }}>Live</span>
-              : <span className="badge badge-muted" style={{ marginLeft: 4 }}>v2</span>
-            }
+            <EnginePill engineMode={engineMode} onChange={setEngineMode} running={running}/>
           </div>
 
           {/* Equity */}
@@ -449,11 +560,9 @@ export default function HFTBot({ initialBalance = 1000 }) {
             <div style={{ display:'flex', gap: 4, flex: 1 }}>
               {Array.from({ length: status?.max_positions || cfg.max_positions }).map((_, i) => {
                 const used = i < (status?.open_count || 0);
-                return <div key={i} style={{
-                  flex: 1, height: 4, borderRadius: 2,
+                return <div key={i} style={{ flex: 1, height: 4, borderRadius: 2,
                   background: used ? 'var(--ink2)' : 'var(--surface3)',
-                  transition:'background .3s',
-                }}/>;
+                  transition:'background .3s' }}/>;
               })}
             </div>
             <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink3)', flexShrink: 0 }}>
@@ -461,9 +570,26 @@ export default function HFTBot({ initialBalance = 1000 }) {
             </span>
           </div>
         )}
+
+        {/* Engine comparison hint (when not running) */}
+        {!running && (
+          <div style={{ marginTop: 14, padding:'9px 12px',
+            background:'var(--surface2)', border:'1px solid var(--border)',
+            borderRadius:'var(--radius-sm)', display:'flex', gap: 20 }}>
+            <div style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
+              <strong style={{ color: engineMode === 'predator' ? 'var(--ink)' : 'var(--ink4)' }}>🕷 Predator</strong>
+              {' '}— waits for 1.5–3σ VWAP extreme, 3-gate confirmation, R:R ≥ 2.5, holds up to 60s.
+            </div>
+            <div style={{ width: 1, background:'var(--border)', flexShrink: 0 }}/>
+            <div style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
+              <strong style={{ color: engineMode === 'jackal' ? 'var(--amber)' : 'var(--ink4)' }}>🐺 Jackal</strong>
+              {' '}— enters on 3 consecutive momentum ticks, fixed TP/SL, holds 3–12s. High frequency.
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Stats strip ─────────────────────────────────────────────────────── */}
+      {/* ── Stats strip ──────────────────────────────────────────────────────── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap: 8 }}>
         {[
           { label:'Trades',    value: st.total_trades ?? 0,                  color: null },
@@ -482,7 +608,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
         ))}
       </div>
 
-      {/* ── Tabbed panel ─────────────────────────────────────────────────────── */}
+      {/* ── Tabbed panel ──────────────────────────────────────────────────────── */}
       <div className="card">
         {/* Tab bar */}
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 6px', overflowX:'auto' }}>
@@ -491,8 +617,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
               className={`tab-btn${tab===id?' active':''}`}
               onClick={() => setTab(id)}
               style={{ borderRadius:0, borderBottom: tab===id ? '2px solid var(--ink)' : '2px solid transparent',
-                margin:'0 1px', whiteSpace:'nowrap' }}
-            >
+                margin:'0 1px', whiteSpace:'nowrap' }}>
               {label}
               {count != null && count > 0 && (
                 <span className={`badge ${tab===id ? 'badge-accent' : 'badge-muted'}`}
@@ -502,7 +627,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
           ))}
         </div>
 
-        {/* ════ TAB: OPEN POSITIONS ══════════════════════════════════════════ */}
+        {/* ════ TAB: OPEN POSITIONS ═══════════════════════════════════════════ */}
         {tab === 'positions' && (
           <div style={{ padding:'16px 20px' }}>
             {openPos.length === 0 ? (
@@ -513,7 +638,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                 </svg>
                 <p style={{ fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
-                  {running ? 'Scanning for mean-reversion setups…' : 'Start the engine to begin'}
+                  {running
+                    ? engineMode === 'predator'
+                      ? 'Scanning for mean-reversion setups…'
+                      : 'Watching for burst momentum entries…'
+                    : 'Start the engine to begin'
+                  }
                 </p>
               </div>
             ) : (
@@ -523,17 +653,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   return (
                     <div key={pos.id} className="card fade-up"
                       style={{ background: clrDim(pos.unrealized_pnl), borderColor: clrB(pos.unrealized_pnl), overflow:'hidden' }}>
-                      {/* PnL top bar */}
                       <div style={{ height: 2, background:'var(--border)' }}>
-                        <div style={{
-                          height:'100%', background: clr(pos.unrealized_pnl),
+                        <div style={{ height:'100%', background: clr(pos.unrealized_pnl),
                           width:`${Math.min(100, Math.abs(pos.unrealized_pct ?? 0) * 8)}%`,
-                          transition:'width .5s ease',
-                        }}/>
+                          transition:'width .5s ease' }}/>
                       </div>
-
                       <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', gap: 12 }}>
-                        {/* Coin + dir */}
                         <div style={{ minWidth: 80 }}>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800,
                             color:'var(--ink)', letterSpacing:'-0.01em', marginBottom: 5 }}>{pos.coin}</div>
@@ -544,15 +669,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             </span>
                           </div>
                         </div>
-
-                        {/* Price grid */}
                         <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 10 }}>
                           <Stat label="Entry"   value={`$${fmt(pos.entry_price, 4)}`}/>
                           <Stat label="Current" value={`$${fmt(pos.current_price, 4)}`}/>
-                          <Stat label="Stop"    value={`$${fmt(pos.stop_price, 4)}`}  color="var(--neg)"/>
+                          <Stat label={engineMode === 'predator' ? 'Stop' : 'SL'}
+                            value={`$${fmt(pos.stop_price, 4)}`} color="var(--neg)"/>
                         </div>
-
-                        {/* PnL */}
                         <div style={{ textAlign:'right', minWidth: 90 }}>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 16, fontWeight: 800,
                             color: clr(pos.unrealized_pnl), lineHeight: 1, fontVariantNumeric:'tabular-nums' }}>
@@ -563,83 +685,72 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             {fmtPct(pos.unrealized_pct ?? 0)}
                           </div>
                         </div>
-
-                        {/* Expand + close */}
                         <div style={{ display:'flex', gap: 5, flexShrink: 0 }}>
-                          <button onClick={() => setExpandPos(expanded ? null : pos.id)} style={{
-                            background:'transparent', border:'1px solid var(--border)',
-                            borderRadius:'var(--radius-sm)', width: 26, height: 26,
-                            display:'flex', alignItems:'center', justifyContent:'center',
-                            color:'var(--ink4)', cursor:'pointer', fontSize: 10,
-                            transition:'all .15s',
-                            borderColor: expanded ? 'var(--border3)' : 'var(--border)',
-                            color: expanded ? 'var(--ink2)' : 'var(--ink4)',
-                          }}>⌗</button>
+                          {engineMode === 'predator' && (
+                            <button onClick={() => setExpandPos(expanded ? null : pos.id)} style={{
+                              background:'transparent', border:'1px solid var(--border)',
+                              borderRadius:'var(--radius-sm)', width: 26, height: 26,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              color: expanded ? 'var(--ink2)' : 'var(--ink4)', cursor:'pointer', fontSize: 10,
+                              borderColor: expanded ? 'var(--border3)' : 'var(--border)',
+                              transition:'all .15s' }}>⌗</button>
+                          )}
                           <button onClick={() => closeOne(pos.id)} style={{
                             background:'transparent', border:'1px solid var(--border)',
                             borderRadius:'var(--radius-sm)', width: 26, height: 26,
                             display:'flex', alignItems:'center', justifyContent:'center',
-                            color:'var(--ink4)', cursor:'pointer', fontSize: 11,
-                            transition:'all .15s',
-                          }}
+                            color:'var(--ink4)', cursor:'pointer', fontSize: 11, transition:'all .15s' }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor='var(--neg-b)'; e.currentTarget.style.color='var(--neg)'; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--ink4)'; }}
                           >✕</button>
                         </div>
                       </div>
 
-                      {/* Expanded: price ladder + extra data */}
-                      {expanded && (
-                        <div style={{
-                          padding:'0 16px 14px',
-                          borderTop:'1px solid var(--border)',
-                          paddingTop: 13,
-                          display:'grid', gridTemplateColumns:'1fr 1fr',
-                          gap: 16,
-                        }}>
-                          {/* Price Ladder */}
+                      {/* Predator expanded view */}
+                      {engineMode === 'predator' && expanded && (
+                        <div style={{ padding:'0 16px 14px', borderTop:'1px solid var(--border)',
+                          paddingTop: 13, display:'grid', gridTemplateColumns:'1fr 1fr', gap: 16 }}>
                           <div>
                             <SecLabel>Price Ladder</SecLabel>
-                            <PriceLadder
-                              entry={pos.entry_price}
-                              stop={pos.stop_price}
-                              tp={pos.take_profit}
-                              current={pos.current_price}
-                              coin={pos.coin}
-                            />
+                            <PriceLadder entry={pos.entry_price} stop={pos.stop_price}
+                              tp={pos.take_profit} current={pos.current_price}/>
                           </div>
-                          {/* Position details */}
                           <div>
                             <SecLabel>Position Details</SecLabel>
-                            <div className="data-row">
-                              <span className="data-label">Capital</span>
-                              <span className="data-value num">${fmt(pos.capital || 0)}</span>
-                            </div>
-                            <div className="data-row">
-                              <span className="data-label">Z-Score at entry</span>
+                            <div className="data-row"><span className="data-label">Capital</span>
+                              <span className="data-value num">${fmt(pos.capital || 0)}</span></div>
+                            <div className="data-row"><span className="data-label">Z-Score at entry</span>
                               <span className="data-value num" style={{ color:'var(--amber)' }}>
-                                {pos.entry_zscore ? `${pos.entry_zscore.toFixed(2)}σ` : '—'}
-                              </span>
-                            </div>
-                            <div className="data-row">
-                              <span className="data-label">OFI at entry</span>
+                                {pos.entry_zscore ? `${pos.entry_zscore.toFixed(2)}σ` : '—'}</span></div>
+                            <div className="data-row"><span className="data-label">OFI at entry</span>
                               <span className="data-value num">
-                                {pos.entry_ofi ? `${(pos.entry_ofi * 100).toFixed(1)}%` : '—'}
-                              </span>
-                            </div>
-                            <div className="data-row">
-                              <span className="data-label">Expected PnL</span>
+                                {pos.entry_ofi ? `${(pos.entry_ofi * 100).toFixed(1)}%` : '—'}</span></div>
+                            <div className="data-row"><span className="data-label">Expected PnL</span>
                               <span className="data-value num" style={{ color:'var(--pos)' }}>
-                                {pos.expected_pnl ? fmtUSD(pos.expected_pnl) : '—'}
-                              </span>
-                            </div>
+                                {pos.expected_pnl ? fmtUSD(pos.expected_pnl) : '—'}</span></div>
                             <div className="data-row" style={{ borderBottom:'none' }}>
                               <span className="data-label">Fee est.</span>
                               <span className="data-value num" style={{ color:'var(--ink3)' }}>
-                                {pos.fee_estimate ? `−$${fmt(pos.fee_estimate, 3)}` : '—'}
-                              </span>
-                            </div>
+                                {pos.fee_estimate ? `−$${fmt(pos.fee_estimate, 3)}` : '—'}</span></div>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Jackal expanded: TP info */}
+                      {engineMode === 'jackal' && (
+                        <div style={{ padding:'8px 16px 12px', borderTop:'1px solid var(--border)',
+                          display:'flex', gap: 20 }}>
+                          <div className="data-row" style={{ borderBottom:'none', flex:1 }}>
+                            <span className="data-label">TP Target</span>
+                            <span className="data-value num" style={{ color:'var(--pos)' }}>
+                              ${fmt(pos.tp_price || pos.take_profit, 4)}</span></div>
+                          <div className="data-row" style={{ borderBottom:'none', flex:1 }}>
+                            <span className="data-label">Capital</span>
+                            <span className="data-value num">${fmt(pos.capital || 0)}</span></div>
+                          <div className="data-row" style={{ borderBottom:'none', flex:1 }}>
+                            <span className="data-label">Peak PnL</span>
+                            <span className="data-value num" style={{ color:'var(--pos)' }}>
+                              {fmtUSD(pos.peak_pnl || 0)}</span></div>
                         </div>
                       )}
                     </div>
@@ -650,26 +761,19 @@ export default function HFTBot({ initialBalance = 1000 }) {
           </div>
         )}
 
-        {/* ════ TAB: POSITION FINDER ═════════════════════════════════════════ */}
-        {tab === 'finder' && (
+        {/* ════ TAB: POSITION FINDER (Predator) / BURST SCANNER (Jackal) ════ */}
+        {tab === 'finder' && engineMode === 'predator' && (
           <div style={{ padding:'16px 20px' }}>
-            <SecLabel right="Real-time setup quality per coin">
-              Position Finder
-            </SecLabel>
-
-            {/* Explanation banner */}
-            <div style={{
-              background:'var(--surface2)', border:'1px solid var(--border)',
+            <SecLabel right="Real-time setup quality per coin">Position Finder</SecLabel>
+            <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
               borderRadius:'var(--radius-sm)', padding:'10px 14px', marginBottom: 14,
-              display:'flex', gap: 10, alignItems:'flex-start',
-            }}>
+              display:'flex', gap: 10, alignItems:'flex-start' }}>
               <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
               <p style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
-                Shows where each coin currently sits relative to its entry zone. Green border = active setup.
-                The ladder shows entry / stop / TP levels so you can see at a glance if the trade is still valid.
+                Shows where each coin sits relative to its mean-reversion entry zone.
+                Green border = VWAP z-score threshold reached with OFI alignment.
               </p>
             </div>
-
             {ms.length === 0 ? (
               <div style={{ padding:'36px 0', textAlign:'center',
                 fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
@@ -678,129 +782,78 @@ export default function HFTBot({ initialBalance = 1000 }) {
             ) : (
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 10 }}>
                 {ms.map(m => {
-                  const isLong    = m.signal_long;
-                  const isShort   = m.signal_short;
-                  const hasSig    = isLong || isShort;
-                  const inPos     = m.in_position;
-                  const zAbs      = Math.abs(m.zscore ?? 0);
-                  const zColor    = isLong ? 'var(--pos)' : isShort ? 'var(--neg)' : 'var(--ink3)';
-                  const ofiPct    = ((m.ofi ?? 0.5) * 100).toFixed(0);
-                  const ofiColor  = m.ofi > 0.6 ? 'var(--pos)' : m.ofi < 0.4 ? 'var(--neg)' : 'var(--ink3)';
-                  const zMax      = cfg.zscore_entry * 1.6;
-
-                  // Quality score 0–100
-                  const quality = Math.min(100, Math.round(
-                    (zAbs / zMax) * 50 +
-                    (hasSig ? 30 : 0) +
-                    (m.spread_ok ? 20 : 0)
-                  ));
+                  const isLong = m.signal_long, isShort = m.signal_short;
+                  const hasSig = isLong || isShort;
+                  const inPos  = m.in_position;
+                  const zAbs   = Math.abs(m.zscore ?? 0);
+                  const zColor = isLong ? 'var(--pos)' : isShort ? 'var(--neg)' : 'var(--ink3)';
+                  const ofiPct = ((m.ofi ?? 0.5) * 100).toFixed(0);
+                  const ofiColor = m.ofi > 0.6 ? 'var(--pos)' : m.ofi < 0.4 ? 'var(--neg)' : 'var(--ink3)';
+                  const zMax   = (predCfg.zscore_entry || 1.8) * 1.6;
+                  const quality = Math.min(100, Math.round((zAbs / zMax) * 50 + (hasSig ? 30 : 0) + (m.spread_ok ? 20 : 0)));
                   const qualityColor = quality >= 70 ? 'var(--pos)' : quality >= 40 ? 'var(--amber)' : 'var(--ink4)';
-
                   return (
-                    <div key={m.coin} className="card" style={{
-                      padding:'14px 16px',
+                    <div key={m.coin} className="card" style={{ padding:'14px 16px',
                       background: hasSig && !inPos ? clrDim(isLong ? 1 : -1) : 'var(--surface)',
                       borderColor: hasSig && !inPos ? clrB(isLong ? 1 : -1) : 'var(--border)',
-                      transition:'all .3s',
-                    }}>
-                      {/* Top row: coin + status */}
+                      transition:'all .3s' }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
                         <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800, color:'var(--ink)' }}>
-                            {m.coin}
-                          </span>
-                          {inPos ? (
-                            <span className="badge badge-accent">In Position</span>
-                          ) : isLong ? (
-                            <span className="badge badge-green">↑ Long Setup</span>
-                          ) : isShort ? (
-                            <span className="badge badge-red">↓ Short Setup</span>
-                          ) : !m.ticks_ready ? (
-                            <span className="badge badge-muted">Warming</span>
-                          ) : (
-                            <span className="badge badge-muted">Watching</span>
-                          )}
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800, color:'var(--ink)' }}>{m.coin}</span>
+                          {inPos ? <span className="badge badge-accent">In Position</span>
+                            : isLong ? <span className="badge badge-green">↑ Long Setup</span>
+                            : isShort ? <span className="badge badge-red">↓ Short Setup</span>
+                            : !m.ticks_ready ? <span className="badge badge-muted">Warming</span>
+                            : <span className="badge badge-muted">Watching</span>}
                         </div>
-                        {/* Quality score */}
                         <div style={{ textAlign:'right' }}>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink4)',
                             textTransform:'uppercase', letterSpacing:'0.08em', marginBottom: 2 }}>Quality</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700, color: qualityColor }}>
-                            {quality}
-                          </div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700, color: qualityColor }}>{quality}</div>
                         </div>
                       </div>
-
-                      {/* Metrics row */}
                       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-                        {/* Z-Score */}
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>Z-Score</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
-                            color: zColor, fontVariantNumeric:'tabular-nums' }}>
-                            {(m.zscore ?? 0) >= 0 ? '+' : ''}{(m.zscore ?? 0).toFixed(2)}σ
-                          </div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700, color: zColor, fontVariantNumeric:'tabular-nums' }}>
+                            {(m.zscore ?? 0) >= 0 ? '+' : ''}{(m.zscore ?? 0).toFixed(2)}σ</div>
                         </div>
-                        {/* OFI */}
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>OFI (bid)</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
-                            color: ofiColor, fontVariantNumeric:'tabular-nums' }}>{ofiPct}%</div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700, color: ofiColor, fontVariantNumeric:'tabular-nums' }}>{ofiPct}%</div>
                         </div>
-                        {/* Price */}
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>Price</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 600, color:'var(--ink2)',
-                            fontVariantNumeric:'tabular-nums' }}>
-                            {m.price >= 1 ? `$${fmt(m.price)}` : `$${m.price?.toFixed(5) ?? '—'}`}
-                          </div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 600, color:'var(--ink2)', fontVariantNumeric:'tabular-nums' }}>
+                            {m.price >= 1 ? `$${fmt(m.price)}` : `$${m.price?.toFixed(5) ?? '—'}`}</div>
                         </div>
                       </div>
-
-                      {/* Z-Score pressure bar */}
                       <div style={{ marginBottom: 10 }}>
                         <div style={{ display:'flex', justifyContent:'space-between', marginBottom: 4 }}>
                           <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)',
-                            textTransform:'uppercase', letterSpacing:'0.08em' }}>
-                            Z-Score pressure
-                          </span>
+                            textTransform:'uppercase', letterSpacing:'0.08em' }}>Z-Score pressure</span>
                           <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)' }}>
-                            threshold {cfg.zscore_entry}σ
-                          </span>
+                            threshold {predCfg.zscore_entry}σ</span>
                         </div>
                         <div className="prog-bar" style={{ height: 5 }}>
-                          <div className="prog-fill" style={{
-                            height: 5, background: zColor,
-                            width:`${Math.min(100, (zAbs / zMax) * 100)}%`,
-                          }}/>
+                          <div className="prog-fill" style={{ height: 5, background: zColor,
+                            width:`${Math.min(100, (zAbs / zMax) * 100)}%` }}/>
                         </div>
                       </div>
-
-                      {/* Spread */}
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>
-                          Spread
-                        </span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
                         {m.spread_ok
                           ? <span className="badge badge-muted" style={{ fontSize: 8 }}>Normal ✓</span>
-                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>
-                        }
+                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>}
                       </div>
-
-                      {/* If in position — show ladder */}
                       {inPos && m.position && (
                         <div style={{ marginTop: 12, paddingTop: 12, borderTop:'1px solid var(--border)' }}>
                           <SecLabel>Live Position Ladder</SecLabel>
-                          <PriceLadder
-                            entry={m.position.entry_price}
-                            stop={m.position.stop_price}
-                            tp={m.position.take_profit}
-                            current={m.price}
-                            coin={m.coin}
-                          />
+                          <PriceLadder entry={m.position.entry_price} stop={m.position.stop_price}
+                            tp={m.position.take_profit} current={m.price}/>
                         </div>
                       )}
                     </div>
@@ -811,96 +864,108 @@ export default function HFTBot({ initialBalance = 1000 }) {
           </div>
         )}
 
-        {/* ════ TAB: SCANNER ═════════════════════════════════════════════════ */}
-        {tab === 'scanner' && (
+        {/* ════ Jackal: BURST SCANNER ═════════════════════════════════════════ */}
+        {tab === 'finder' && engineMode === 'jackal' && (
           <div style={{ padding:'16px 20px' }}>
-            <SecLabel right={`Z-entry ≥ ${cfg.zscore_entry}σ`}>Microstructure Scanner</SecLabel>
-
-            {ms.length === 0 ? (
+            <SecLabel right={`Min streak: ${jackCfg.min_streak} ticks · Move ≥ ${jackCfg.min_move_pct}%`}>
+              Burst Scanner
+            </SecLabel>
+            <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+              borderRadius:'var(--radius-sm)', padding:'10px 14px', marginBottom: 14,
+              display:'flex', gap: 10, alignItems:'flex-start' }}>
+              <span style={{ fontSize: 14, flexShrink: 0 }}>⚡</span>
+              <p style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
+                Detects consecutive tick momentum. Entry fires on {jackCfg.min_streak}+ ticks in one direction
+                with minimum {jackCfg.min_move_pct}% total move. OFI gate prevents extreme opposing flow.
+              </p>
+            </div>
+            {burst.length === 0 ? (
               <div style={{ padding:'36px 0', textAlign:'center',
                 fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
-                {running ? 'Collecting tick data…' : 'Start engine to see live signals'}
+                {running ? 'Collecting burst ticks…' : 'Start Jackal to see live burst data'}
               </div>
             ) : (
-              <>
-                {/* Column headers */}
-                <div style={{
-                  display:'grid',
-                  gridTemplateColumns:'52px 90px 72px 68px 1fr 68px 96px',
-                  gap: 8, padding:'0 0 8px',
-                  fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.1em',
-                  textTransform:'uppercase', color:'var(--ink4)',
-                  borderBottom:'1px solid var(--border)', marginBottom: 4,
-                }}>
-                  <div>Coin</div><div>Price</div><div>Z-Score</div>
-                  <div>OFI</div><div>Pressure</div><div>Spread</div><div>Signal</div>
-                </div>
-
-                {ms.map(m => {
-                  const zAbs   = Math.abs(m.zscore ?? 0);
-                  const zRatio = Math.min(1, zAbs / (cfg.zscore_entry * 1.5 || 2.7));
-                  const isLong  = m.signal_long;
-                  const isShort = m.signal_short;
-                  const hasSig  = isLong || isShort;
-                  const zColor  = isLong ? 'var(--pos)' : isShort ? 'var(--neg)' : 'var(--ink3)';
-
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 10 }}>
+                {burst.map(b => {
+                  const up     = b.streak_up >= jackCfg.min_streak;
+                  const dn     = b.streak_dn >= jackCfg.min_streak;
+                  const hasSig = up || dn;
+                  const inPos  = b.in_position;
+                  const streakColor = up ? 'var(--pos)' : dn ? 'var(--neg)' : 'var(--ink3)';
+                  const ofiColor = b.ofi > 0.6 ? 'var(--pos)' : b.ofi < 0.4 ? 'var(--neg)' : 'var(--ink3)';
                   return (
-                    <div key={m.coin} style={{
-                      display:'grid',
-                      gridTemplateColumns:'52px 90px 72px 68px 1fr 68px 96px',
-                      gap: 8, padding:'9px 0',
-                      borderBottom:'1px solid var(--border)',
-                      alignItems:'center',
-                      background: hasSig ? clrDim(isLong ? 1 : -1) : 'transparent',
-                      borderRadius: hasSig ? 'var(--radius-sm)' : 0,
-                    }}>
-                      <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 700, color:'var(--ink)' }}>
-                        {m.coin}
+                    <div key={b.coin} className="card" style={{ padding:'14px 16px',
+                      background: hasSig && !inPos ? clrDim(up ? 1 : -1) : 'var(--surface)',
+                      borderColor: hasSig && !inPos ? clrB(up ? 1 : -1) : 'var(--border)',
+                      transition:'all .3s' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800, color:'var(--ink)' }}>{b.coin}</span>
+                          {inPos ? <span className="badge badge-accent">In Position</span>
+                            : up ? <span className="badge badge-green">↑ Burst Long</span>
+                            : dn ? <span className="badge badge-red">↓ Burst Short</span>
+                            : <span className="badge badge-muted">Watching</span>}
+                        </div>
+                        <div style={{ textAlign:'right' }}>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink4)',
+                            textTransform:'uppercase', letterSpacing:'0.08em', marginBottom: 2 }}>Price</div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 600, color:'var(--ink2)' }}>
+                            {b.price >= 1 ? `$${fmt(b.price)}` : `$${b.price?.toFixed(5) ?? '—'}`}</div>
+                        </div>
                       </div>
-                      <div style={{ fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink3)',
-                        fontVariantNumeric:'tabular-nums' }}>
-                        {m.price >= 1 ? `$${fmt(m.price)}` : `$${m.price?.toFixed(5) ?? '—'}`}
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
+                            textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↑ Streak</div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
+                            color: up ? 'var(--pos)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
+                            {b.streak_up ?? 0}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
+                            textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↓ Streak</div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
+                            color: dn ? 'var(--neg)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
+                            {b.streak_dn ?? 0}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
+                            textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>OFI</div>
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700, color: ofiColor, fontVariantNumeric:'tabular-nums' }}>
+                            {((b.ofi ?? 0.5) * 100).toFixed(0)}%</div>
+                        </div>
                       </div>
-                      <div style={{ fontFamily:'var(--mono)', fontSize: 12, fontWeight: 700,
-                        color: zColor, fontVariantNumeric:'tabular-nums' }}>
-                        {(m.zscore ?? 0) >= 0 ? '+' : ''}{(m.zscore ?? 0).toFixed(2)}σ
+                      {/* Streak bar */}
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ display:'flex', gap: 3 }}>
+                          {Array.from({ length: Math.max(jackCfg.min_streak + 2, 5) }).map((_, i) => (
+                            <div key={i} style={{ flex: 1, height: 5, borderRadius: 2,
+                              background: i < (b.streak_up || 0) ? 'var(--pos)'
+                                : i < (b.streak_dn || 0) ? 'var(--neg)' : 'var(--surface3)',
+                              transition:'background .2s' }}/>
+                          ))}
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginTop: 3 }}>
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)' }}>streak</span>
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)' }}>
+                            need {jackCfg.min_streak}</span>
+                        </div>
                       </div>
-                      <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 600,
-                        color:(m.ofi??0.5)>0.6?'var(--pos)':(m.ofi??0.5)<0.4?'var(--neg)':'var(--ink3)',
-                        fontVariantNumeric:'tabular-nums' }}>
-                        {((m.ofi ?? 0.5)*100).toFixed(0)}%
-                      </div>
-                      <div className="prog-bar" style={{ height: 4 }}>
-                        <div className="prog-fill" style={{ height:4, background: zColor, width:`${zRatio*100}%` }}/>
-                      </div>
-                      <div>
-                        {m.spread_ok
-                          ? <span className="badge badge-muted" style={{ fontSize: 7 }}>OK</span>
-                          : <span className="badge badge-amber" style={{ fontSize: 7 }}>Wide</span>
-                        }
-                      </div>
-                      <div>
-                        {m.in_position ? (
-                          <span className="badge badge-accent" style={{ fontSize: 8 }}>In Pos</span>
-                        ) : isLong ? (
-                          <span className="badge badge-green" style={{ fontSize: 8 }}>↑ Long</span>
-                        ) : isShort ? (
-                          <span className="badge badge-red" style={{ fontSize: 8 }}>↓ Short</span>
-                        ) : !m.ticks_ready ? (
-                          <span className="badge badge-muted" style={{ fontSize: 8 }}>Warming</span>
-                        ) : (
-                          <span className="badge badge-muted" style={{ fontSize: 8 }}>Watching</span>
-                        )}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
+                        {b.spread_ok !== false
+                          ? <span className="badge badge-muted" style={{ fontSize: 8 }}>OK ✓</span>
+                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>}
                       </div>
                     </div>
                   );
                 })}
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {/* ════ TAB: HISTORY ═════════════════════════════════════════════════ */}
+        {/* ════ TAB: HISTORY ══════════════════════════════════════════════════ */}
         {tab === 'log' && (
           <div>
             {logs.length === 0 ? (
@@ -924,26 +989,20 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <td style={{ fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
                           {new Date(t.closed_at * 1000).toLocaleTimeString('en-US', { hour12:false })}
                         </td>
-                        <td style={{ fontFamily:'var(--mono)', fontSize: 12, fontWeight: 700, color:'var(--ink)' }}>
-                          {t.coin}
-                        </td>
+                        <td style={{ fontFamily:'var(--mono)', fontSize: 12, fontWeight: 700, color:'var(--ink)' }}>{t.coin}</td>
                         <td><DirBadge d={t.direction}/></td>
-                        <td style={{ fontFamily:'var(--mono)', fontSize: 11, color:'var(--ink3)',
-                          fontVariantNumeric:'tabular-nums' }}>${fmt(t.entry_price, 4)}</td>
-                        <td style={{ fontFamily:'var(--mono)', fontSize: 11, color:'var(--ink3)',
-                          fontVariantNumeric:'tabular-nums' }}>${fmt(t.exit_price, 4)}</td>
+                        <td style={{ fontFamily:'var(--mono)', fontSize: 11, color:'var(--ink3)', fontVariantNumeric:'tabular-nums' }}>
+                          ${fmt(t.entry_price, 4)}</td>
+                        <td style={{ fontFamily:'var(--mono)', fontSize: 11, color:'var(--ink3)', fontVariantNumeric:'tabular-nums' }}>
+                          ${fmt(t.exit_price, 4)}</td>
                         <td style={{ fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
-                          {fmtS(Math.round(t.hold_seconds ?? 0))}
-                        </td>
+                          {fmtS(Math.round(t.hold_seconds ?? 0))}</td>
                         <td><ExitBadge r={t.exit_reason}/></td>
                         <td style={{ textAlign:'right' }}>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 700,
-                            color: clr(t.net_pnl), fontVariantNumeric:'tabular-nums' }}>
-                            {fmtUSD(t.net_pnl)}
-                          </div>
+                            color: clr(t.net_pnl), fontVariantNumeric:'tabular-nums' }}>{fmtUSD(t.net_pnl)}</div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 9, color: clr(t.net_pnl), marginTop: 1 }}>
-                            {fmtPct(t.net_pct ?? 0)}
-                          </div>
+                            {fmtPct(t.net_pct ?? 0)}</div>
                         </td>
                       </tr>
                     ))}
@@ -954,10 +1013,9 @@ export default function HFTBot({ initialBalance = 1000 }) {
           </div>
         )}
 
-        {/* ════ TAB: STATS ═══════════════════════════════════════════════════ */}
+        {/* ════ TAB: STATS ════════════════════════════════════════════════════ */}
         {tab === 'stats' && (
           <div style={{ padding:'16px 20px', display:'flex', gap: 18 }}>
-            {/* Metrics grid */}
             <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr', gap: 8 }}>
               {[
                 { label:'Total Trades',  value: st.total_trades ?? 0 },
@@ -972,10 +1030,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 { label:'Loss Streak',   value: st.max_loss_streak ?? 0,
                   color:(st.max_loss_streak??0)>=3 ? 'var(--neg)' : 'var(--ink3)' },
               ].map(({ label, value, color }) => (
-                <div key={label} style={{
-                  background:'var(--surface2)', border:'1px solid var(--border)',
-                  borderRadius:'var(--radius-sm)', padding:'11px 13px',
-                }}>
+                <div key={label} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                  borderRadius:'var(--radius-sm)', padding:'11px 13px' }}>
                   <div style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.1em',
                     textTransform:'uppercase', color:'var(--ink4)', marginBottom: 6 }}>{label}</div>
                   <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
@@ -983,8 +1039,6 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 </div>
               ))}
             </div>
-
-            {/* Right: sparkline + balance */}
             <div style={{ width: 186, display:'flex', flexDirection:'column', gap: 8 }}>
               <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
                 borderRadius:'var(--radius-sm)', padding:'12px 14px' }}>
@@ -1000,21 +1054,29 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 <div className="data-row" style={{ borderBottom:'none' }}>
                   <span className="data-label">Unrealized</span>
                   <span className="data-value num" style={{ color: clr(status?.unrealized_pnl ?? 0) }}>
-                    {fmtUSD(status?.unrealized_pnl ?? 0)}
-                  </span>
+                    {fmtUSD(status?.unrealized_pnl ?? 0)}</span>
                 </div>
               </div>
-              {/* Exit breakdown */}
+              {/* Jackal: latency */}
+              {engineMode === 'jackal' && status?.latency_ms != null && (
+                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                  borderRadius:'var(--radius-sm)', padding:'12px 14px' }}>
+                  <div className="data-row" style={{ borderBottom:'none' }}>
+                    <span className="data-label">Avg Latency</span>
+                    <span className="data-value num" style={{
+                      color: status.latency_ms < 150 ? 'var(--pos)' : status.latency_ms < 300 ? 'var(--amber)' : 'var(--neg)' }}>
+                      {fmt(status.latency_ms, 1)}ms</span>
+                  </div>
+                </div>
+              )}
               {st.exit_breakdown && Object.values(st.exit_breakdown).some(v => v > 0) && (
                 <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
                   borderRadius:'var(--radius-sm)', padding:'12px 14px' }}>
                   <SecLabel>Exit Breakdown</SecLabel>
                   {Object.entries(st.exit_breakdown).filter(([,v]) => v > 0).map(([k, v]) => (
-                    <div key={k} style={{ display:'flex', justifyContent:'space-between',
-                      alignItems:'center', marginBottom: 6 }}>
+                    <div key={k} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 6 }}>
                       <ExitBadge r={k}/>
-                      <span style={{ fontFamily:'var(--mono)', fontSize: 11,
-                        fontWeight: 600, color:'var(--ink3)' }}>{v}</span>
+                      <span style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 600, color:'var(--ink3)' }}>{v}</span>
                     </div>
                   ))}
                 </div>
@@ -1023,11 +1085,101 @@ export default function HFTBot({ initialBalance = 1000 }) {
           </div>
         )}
 
-        {/* ════ TAB: CONFIG ══════════════════════════════════════════════════ */}
+        {/* ════ TAB: VAULT (Jackal only) ══════════════════════════════════════ */}
+        {tab === 'vault' && engineMode === 'jackal' && (
+          <div style={{ padding:'16px 20px' }}>
+            <SecLabel right="Dynamic equity floor protection">The Vault</SecLabel>
+            {!vault || Object.keys(vault).length === 0 ? (
+              <div style={{ padding:'36px 0', textAlign:'center',
+                fontFamily:'var(--mono)', fontSize: 10, color:'var(--ink4)' }}>
+                Start Jackal to initialise vault
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap: 12 }}>
+                {/* Status banner */}
+                <div style={{ padding:'12px 16px', borderRadius:'var(--radius-sm)',
+                  background: vault.is_halted ? 'var(--neg-dim)' : 'var(--pos-dim)',
+                  border:`1px solid ${vault.is_halted ? 'var(--neg-b)' : 'var(--pos-b)'}`,
+                  display:'flex', alignItems:'center', gap: 12 }}>
+                  <span style={{ fontSize: 20 }}>{vault.is_halted ? '🔒' : '🟢'}</span>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 700,
+                      color: vault.is_halted ? 'var(--neg)' : 'var(--pos)' }}>
+                      {vault.is_halted ? 'VAULT HALTED' : 'VAULT ACTIVE'}
+                    </div>
+                    {vault.halt_reason && (
+                      <div style={{ fontSize: 10, color:'var(--ink3)', marginTop: 2 }}>{vault.halt_reason}</div>
+                    )}
+                  </div>
+                  {vault.is_halted && (
+                    <button onClick={vaultResume} style={{
+                      background:'var(--pos)', border:'none', borderRadius:'var(--radius-sm)',
+                      padding:'6px 14px', fontFamily:'var(--mono)', fontSize: 10,
+                      fontWeight: 700, color:'#fff', cursor:'pointer' }}>Resume</button>
+                  )}
+                </div>
+
+                {/* Vault stats grid */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 10 }}>
+                  {[
+                    { label:'Starting Balance', value:`$${fmt(vault.initial_balance)}` },
+                    { label:'Current Equity',   value:`$${fmt(vault.current_equity)}`, color: clr(vault.current_equity - vault.initial_balance) },
+                    { label:'Dynamic Floor',    value:`$${fmt(vault.dynamic_floor)}`,   color:'var(--amber)' },
+                    { label:'Gains Locked',     value:`$${fmt(vault.locked_gains ?? 0)}`, color:'var(--pos)' },
+                    { label:'Gains %',          value:`${fmtPct(vault.gains_pct ?? 0)}`, color: clr(vault.gains_pct ?? 0) },
+                    { label:'DD from Peak',     value:`${fmt(vault.dd_from_peak_pct ?? 0, 2)}%`, color: (vault.dd_from_peak_pct??0)>2?'var(--neg)':'var(--ink3)' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                      borderRadius:'var(--radius-sm)', padding:'12px 14px' }}>
+                      <div style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.1em',
+                        textTransform:'uppercase', color:'var(--ink4)', marginBottom: 6 }}>{label}</div>
+                      <div style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
+                        color: color || 'var(--ink3)', fontVariantNumeric:'tabular-nums' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Equity vs Floor progress */}
+                <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
+                  borderRadius:'var(--radius-sm)', padding:'14px 16px' }}>
+                  <SecLabel right={`Lock step: +${jackCfg.lock_step_pct}% → locks ${(jackCfg.lock_ratio*100).toFixed(0)}%`}>
+                    Equity vs Floor
+                  </SecLabel>
+                  <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ height: 8, background:'var(--surface3)', borderRadius: 4, overflow:'hidden' }}>
+                        <div style={{
+                          height:'100%', borderRadius: 4,
+                          background: 'linear-gradient(90deg, var(--amber), var(--pos))',
+                          width:`${Math.min(100, Math.max(0,
+                            ((vault.current_equity - vault.initial_balance) / Math.max(vault.initial_balance, 1)) * 100 / 10
+                          ) * 10)}%`,
+                          transition:'width .5s ease',
+                        }}/>
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginTop: 6 }}>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink4)' }}>
+                          Start ${fmt(vault.initial_balance)}</span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--amber)' }}>
+                          Floor ${fmt(vault.dynamic_floor)}</span>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--pos)' }}>
+                          Now ${fmt(vault.current_equity)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 10, color:'var(--ink4)', lineHeight: 1.5 }}>
+                    Every +{jackCfg.lock_step_pct}% gain ratchets the floor up to lock {(jackCfg.lock_ratio*100).toFixed(0)}% of gains.
+                    Floor never drops. Trading halts if equity hits floor.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════ TAB: CONFIG ═══════════════════════════════════════════════════ */}
         {tab === 'config' && (
           <div style={{ padding:'16px 20px', display:'flex', flexDirection:'column', gap: 18 }}>
-
-            {/* Balance */}
             {!running && (
               <div>
                 <SecLabel>Starting Balance</SecLabel>
@@ -1037,13 +1189,11 @@ export default function HFTBot({ initialBalance = 1000 }) {
                     fontSize: 13, color:'var(--ink4)', pointerEvents:'none' }}>$</span>
                   <input type="number" value={balance}
                     onChange={e => setBalance(Number(e.target.value))}
-                    style={{
-                      width:'100%', background:'var(--surface2)',
+                    style={{ width:'100%', background:'var(--surface2)',
                       border:'1px solid var(--border)', borderRadius:'var(--radius-sm)',
                       padding:'10px 10px 10px 24px',
                       fontFamily:'var(--mono)', fontSize: 16, fontWeight: 700,
-                      color:'var(--ink)', outline:'none', transition:'border-color .15s',
-                    }}
+                      color:'var(--ink)', outline:'none', transition:'border-color .15s' }}
                     onFocus={e => e.target.style.borderColor = 'var(--border3)'}
                     onBlur={e  => e.target.style.borderColor = 'var(--border)'}
                   />
@@ -1061,51 +1211,104 @@ export default function HFTBot({ initialBalance = 1000 }) {
 
             <hr className="divider" style={{ margin:0 }}/>
 
-            <div>
-              <SecLabel>Strategy Parameters</SecLabel>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
-                <CfgInput label="Max Concurrent Positions" hint="Recommended: 2–4"
-                  value={cfg.max_positions} step={1} min={1} max={10}
-                  onChange={v => setCfg(c => ({ ...c, max_positions: v }))}/>
-                <CfgInput label="Capital Per Trade ($)" hint="Per-position USD size"
-                  value={cfg.capital_per_trade} step={10} min={10}
-                  onChange={v => setCfg(c => ({ ...c, capital_per_trade: v }))}/>
-                <CfgInput label="Z-Score Entry Threshold" hint="1.8 = 1.8σ from VWAP"
-                  value={cfg.zscore_entry} step={0.1} min={1.0} max={4.0}
-                  onChange={v => setCfg(c => ({ ...c, zscore_entry: v }))}/>
-                <CfgInput label="ATR Stop Multiplier" hint="Stop = ATR × this value"
-                  value={cfg.atr_stop_mult} step={0.1} min={0.5} max={5.0}
-                  onChange={v => setCfg(c => ({ ...c, atr_stop_mult: v }))}/>
-                <CfgInput label="Min Reward : Risk Ratio" hint="TP must be ≥ this × risk"
-                  value={cfg.min_rr_ratio} step={0.1} min={1.5} max={5.0}
-                  onChange={v => setCfg(c => ({ ...c, min_rr_ratio: v }))}/>
-                <CfgInput label="Max Hold Seconds" hint="Hard close after N seconds"
-                  value={cfg.max_hold_seconds} step={10} min={10} max={300}
-                  onChange={v => setCfg(c => ({ ...c, max_hold_seconds: v }))}/>
-                <CfgInput label="Scan Interval (s)" hint="Lower = faster but more CPU"
-                  value={cfg.scan_interval} step={0.5} min={0.5} max={10}
-                  onChange={v => setCfg(c => ({ ...c, scan_interval: v }))}/>
-              </div>
-            </div>
+            {/* ── Predator config ── */}
+            {engineMode === 'predator' && (
+              <>
+                <div>
+                  <SecLabel>🕷 Predator — Mean Reversion Parameters</SecLabel>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
+                    <CfgInput label="Max Concurrent Positions" hint="Recommended: 2–4"
+                      value={predCfg.max_positions} step={1} min={1} max={10}
+                      onChange={v => setPredCfg(c => ({ ...c, max_positions: v }))}/>
+                    <CfgInput label="Capital Per Trade ($)" hint="Per-position USD size"
+                      value={predCfg.capital_per_trade} step={10} min={10}
+                      onChange={v => setPredCfg(c => ({ ...c, capital_per_trade: v }))}/>
+                    <CfgInput label="Z-Score Entry Threshold" hint="1.8 = 1.8σ from VWAP"
+                      value={predCfg.zscore_entry} step={0.1} min={1.0} max={4.0}
+                      onChange={v => setPredCfg(c => ({ ...c, zscore_entry: v }))}/>
+                    <CfgInput label="ATR Stop Multiplier" hint="Stop = ATR × this value"
+                      value={predCfg.atr_stop_mult} step={0.1} min={0.5} max={5.0}
+                      onChange={v => setPredCfg(c => ({ ...c, atr_stop_mult: v }))}/>
+                    <CfgInput label="Min Reward:Risk Ratio" hint="TP must be ≥ this × risk"
+                      value={predCfg.min_rr_ratio} step={0.1} min={1.5} max={5.0}
+                      onChange={v => setPredCfg(c => ({ ...c, min_rr_ratio: v }))}/>
+                    <CfgInput label="Max Hold Seconds" hint="Hard close after N seconds"
+                      value={predCfg.max_hold_seconds} step={10} min={10} max={300}
+                      onChange={v => setPredCfg(c => ({ ...c, max_hold_seconds: v }))}/>
+                    <CfgInput label="Scan Interval (s)" hint="Lower = faster but more CPU"
+                      value={predCfg.scan_interval} step={0.5} min={0.5} max={10}
+                      onChange={v => setPredCfg(c => ({ ...c, scan_interval: v }))}/>
+                  </div>
+                </div>
+                <hr className="divider" style={{ margin:0 }}/>
+                <Toggle
+                  on={predCfg.long_bias} onChange={() => setPredCfg(c => ({ ...c, long_bias: !c.long_bias }))}
+                  label="Long Bias Only"
+                  hint="Enable to skip short positions — safer in trending markets"
+                />
+              </>
+            )}
 
-            <hr className="divider" style={{ margin:0 }}/>
-
-            <Toggle
-              on={cfg.long_bias} onChange={() => setCfg(c => ({ ...c, long_bias: !c.long_bias }))}
-              label="Long Bias Only"
-              hint="Enable to skip short positions — safer in trending markets"
-            />
+            {/* ── Jackal config ── */}
+            {engineMode === 'jackal' && (
+              <>
+                <div>
+                  <SecLabel>🐺 Jackal — Burst Entry Parameters</SecLabel>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
+                    <CfgInput label="Max Concurrent Positions" hint="3–8, Jackal trades fast"
+                      value={jackCfg.max_positions} step={1} min={1} max={10}
+                      onChange={v => setJackCfg(c => ({ ...c, max_positions: v }))}/>
+                    <CfgInput label="Capital Per Trade ($)" hint="Keep small — 1–5% of balance"
+                      value={jackCfg.capital_per_trade} step={10} min={10}
+                      onChange={v => setJackCfg(c => ({ ...c, capital_per_trade: v }))}/>
+                    <CfgInput label="Min Streak (ticks)" hint="2 = aggressive, 4 = selective"
+                      value={jackCfg.min_streak} step={1} min={2} max={6}
+                      onChange={v => setJackCfg(c => ({ ...c, min_streak: v }))}/>
+                    <CfgInput label="Min Move % per burst" hint="0.01–0.05%"
+                      value={jackCfg.min_move_pct} step={0.005} min={0.005} max={0.1}
+                      onChange={v => setJackCfg(c => ({ ...c, min_move_pct: v }))}/>
+                    <CfgInput label="Take Profit %" hint="0.08–0.15% target"
+                      value={jackCfg.tp_pct} step={0.01} min={0.03} max={0.5}
+                      onChange={v => setJackCfg(c => ({ ...c, tp_pct: v }))}/>
+                    <CfgInput label="Stop Loss %" hint="0.06–0.10% — must be < TP"
+                      value={jackCfg.sl_pct} step={0.01} min={0.03} max={0.3}
+                      onChange={v => setJackCfg(c => ({ ...c, sl_pct: v }))}/>
+                    <CfgInput label="Max Hold Seconds" hint="5–15s for micro-momentum"
+                      value={jackCfg.max_hold_seconds} step={1} min={3} max={60}
+                      onChange={v => setJackCfg(c => ({ ...c, max_hold_seconds: v }))}/>
+                    <CfgInput label="Scan Interval (s)" hint="0.05–0.10s (70ms default)"
+                      value={jackCfg.scan_interval} step={0.01} min={0.03} max={1.0}
+                      onChange={v => setJackCfg(c => ({ ...c, scan_interval: v }))}/>
+                  </div>
+                </div>
+                <hr className="divider" style={{ margin:0 }}/>
+                <div>
+                  <SecLabel>🔒 Vault Parameters</SecLabel>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
+                    <CfgInput label="Lock Step %" hint="Every +N% gain evaluates floor"
+                      value={jackCfg.lock_step_pct} step={0.1} min={0.1} max={2.0}
+                      onChange={v => setJackCfg(c => ({ ...c, lock_step_pct: v }))}/>
+                    <CfgInput label="Lock Ratio" hint="0.6 = lock 60% of gains"
+                      value={jackCfg.lock_ratio} step={0.05} min={0.3} max={0.9}
+                      onChange={v => setJackCfg(c => ({ ...c, lock_ratio: v }))}/>
+                    <CfgInput label="Max Daily DD %" hint="Hard stop for the day"
+                      value={jackCfg.max_daily_dd_pct} step={0.5} min={1.0} max={10.0}
+                      onChange={v => setJackCfg(c => ({ ...c, max_daily_dd_pct: v }))}/>
+                    <CfgInput label="OFI Floor" hint="Min bid pressure for LONG (0.35)"
+                      value={jackCfg.ofi_floor} step={0.05} min={0.2} max={0.5}
+                      onChange={v => setJackCfg(c => ({ ...c, ofi_floor: v }))}/>
+                  </div>
+                </div>
+              </>
+            )}
 
             <button
               onClick={applyConfig}
-              style={{
-                background:'var(--surface3)', border:'1px solid var(--border2)',
+              style={{ background:'var(--surface3)', border:'1px solid var(--border2)',
                 borderRadius:'var(--radius-sm)', padding:'11px 0', width:'100%',
                 fontFamily:'var(--mono)', fontSize: 10, fontWeight: 700,
                 letterSpacing:'0.08em', textTransform:'uppercase',
-                color:'var(--ink)', cursor:'pointer',
-                transition:'background .15s, border-color .15s',
-              }}
+                color:'var(--ink)', cursor:'pointer', transition:'background .15s, border-color .15s' }}
               onMouseEnter={e => { e.currentTarget.style.background='var(--surface4)'; e.currentTarget.style.borderColor='var(--border3)'; }}
               onMouseLeave={e => { e.currentTarget.style.background='var(--surface3)'; e.currentTarget.style.borderColor='var(--border2)'; }}
             >Apply Config</button>
@@ -1113,26 +1316,23 @@ export default function HFTBot({ initialBalance = 1000 }) {
         )}
       </div>
 
-      {/* ── Activity log ────────────────────────────────────────────────────── */}
+      {/* ── Activity log ──────────────────────────────────────────────────────── */}
       {running && events.length > 0 && (
         <div className="card">
           <div style={{ padding:'9px 16px', borderBottom:'1px solid var(--border)',
             display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.12em',
-              textTransform:'uppercase', color:'var(--ink4)' }}>Activity</span>
+              textTransform:'uppercase', color:'var(--ink4)' }}>Activity · {eng.emoji} {eng.name}</span>
             <LiveDot on={running}/>
           </div>
           <div style={{ maxHeight: 176, overflowY:'auto', padding:'5px 0' }}>
             {events.map((ev, i) => {
-              const tagMap = {
-                ENTRY:'badge-green', EXIT:'badge-accent', ENGINE:'badge-muted',
+              const tagMap = { ENTRY:'badge-green', EXIT:'badge-accent', ENGINE:'badge-muted',
                 CIRCUIT:'badge-red', CONFIG:'badge-amber', ERROR:'badge-red',
-              };
+                VAULT:'badge-amber', BURST:'badge-green' };
               return (
-                <div key={i} style={{
-                  padding:'4px 16px', display:'flex', gap: 10, alignItems:'flex-start',
-                  background: i === 0 ? 'var(--surface2)' : 'transparent',
-                }}>
+                <div key={i} style={{ padding:'4px 16px', display:'flex', gap: 10, alignItems:'flex-start',
+                  background: i === 0 ? 'var(--surface2)' : 'transparent' }}>
                   <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)',
                     flexShrink: 0, minWidth: 46 }}>{ev.time}</span>
                   <span className={`badge ${tagMap[ev.tag] || 'badge-muted'}`}
