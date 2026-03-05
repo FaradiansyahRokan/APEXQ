@@ -141,6 +141,24 @@ export default function DemoTrading() {
   const [showChart,  setShowChart]  = useState(true);
   const [notification, setNotification] = useState(null);
 
+  // ── Watchlist ─────────────────────────────────────────────
+  const DEFAULT_WATCHLIST = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'BNB-USD', 'NVDA', 'AAPL'];
+  const [watchlist,     setWatchlist]     = useState(() => {
+    try { return JSON.parse(localStorage.getItem('apexq_watchlist') || 'null') || DEFAULT_WATCHLIST; }
+    catch { return DEFAULT_WATCHLIST; }
+  });
+  const [watchPrices,   setWatchPrices]   = useState({});  // ticker → { price, open, chgPct, sparkline[] }
+  const [watchInput,    setWatchInput]    = useState('');
+  const watchWsRefs = useRef({});  // ticker → WebSocket (crypto only)
+
+  // ── Standalone chart (independen dari signal) ─────────────
+  const [chartTicker,   setChartTicker]   = useState('');
+  const [standaloneChart, setStandaloneChart] = useState(null);   // { data, tf, ticker }
+  const [chartPanelTf,  setChartPanelTf]  = useState('1D');
+  const [chartPanelLoading, setChartPanelLoading] = useState(false);
+  const [liveCandle,    setLiveCandle]    = useState(null);  // realtime candle update
+  const chartWsRef = useRef(null);
+
   // ═══════════════════════════════════════════════════════════════
   //  PERSISTENCE
   // ═══════════════════════════════════════════════════════════════
@@ -193,48 +211,11 @@ export default function DemoTrading() {
     if (!acc?.armorReady) return;
     setArmorBusy(true);
     try {
-      // Coba update dulu
       await axios.post(`${API}/api/armor/update`, {
         session_id:      acc.sessionId,
         current_balance: acc.currentBalance,
         date:            today(),
       });
-    } catch (e) {
-      const status = e?.response?.status;
-      // 400 = armor not initialized (backend restart), 404 = route not found
-      // → Auto-reinit armor agar sesi bisa lanjut tanpa user harus reset manual
-      if (status === 400 || status === 404 || status === 503) {
-        console.warn('[Armor] Backend restart detected — re-initializing armor session...');
-        try {
-          await axios.post(`${API}/api/armor/init`, {
-            session_id:          acc.sessionId,
-            initial_balance:     acc.initialBalance,
-            trailing_stop_pct:   0.15,
-            target_vol_ann:      0.12,
-            base_kelly_fraction: 0.25,
-            reserve_rate:        0.15,
-            min_win_rate:        0.45,
-            max_consec_losses:   7,
-          });
-          // Retry update setelah reinit berhasil
-          await axios.post(`${API}/api/armor/update`, {
-            session_id:      acc.sessionId,
-            current_balance: acc.currentBalance,
-            date:            today(),
-          });
-        } catch (reinitErr) {
-          console.warn('[Armor] Re-init also failed:', reinitErr.message);
-          setArmorBusy(false);
-          return; // Gagal total, stop di sini
-        }
-      } else {
-        console.warn('[Armor] Refresh failed:', e.message);
-        setArmorBusy(false);
-        return;
-      }
-    }
-    // Ambil status terbaru setelah update berhasil
-    try {
       const [sRes, mRes] = await Promise.all([
         axios.get(`${API}/api/armor/status?session_id=${acc.sessionId}`),
         axios.get(`${API}/api/armor/milestones?session_id=${acc.sessionId}`),
@@ -242,7 +223,7 @@ export default function DemoTrading() {
       setArmor(sRes.data);
       setMilestones(mRes.data);
     } catch (e) {
-      console.warn('[Armor] Status fetch failed:', e.message);
+      console.warn('Armor refresh failed:', e.message);
     } finally {
       setArmorBusy(false);
     }
@@ -407,6 +388,168 @@ export default function DemoTrading() {
     };
   }, []);
 
+  // ═══════════════════════════════════════════════════════════════
+  //  WATCHLIST — fetch prices + sparkline via polling
+  // ═══════════════════════════════════════════════════════════════
+  const saveWatchlist = useCallback((list) => {
+    setWatchlist(list);
+    localStorage.setItem('apexq_watchlist', JSON.stringify(list));
+  }, []);
+
+  const addToWatchlist = useCallback(() => {
+    const tk = watchInput.trim().toUpperCase();
+    if (!tk || watchlist.includes(tk)) { setWatchInput(''); return; }
+    saveWatchlist([...watchlist, tk]);
+    setWatchInput('');
+  }, [watchInput, watchlist, saveWatchlist]);
+
+  const removeFromWatchlist = useCallback((tk) => {
+    saveWatchlist(watchlist.filter(t => t !== tk));
+    // Close WS if crypto
+    if (watchWsRefs.current[tk]) {
+      watchWsRefs.current[tk]?.close();
+      delete watchWsRefs.current[tk];
+    }
+  }, [watchlist, saveWatchlist]);
+
+  // Poll non-crypto watch prices every 15s, subscribe WS for crypto
+  useEffect(() => {
+    const cryptoTickers  = watchlist.filter(isCrypto);
+    const stockTickers   = watchlist.filter(t => !isCrypto(t));
+
+    // ── WebSocket for crypto watchlist ──
+    // Close WS for removed tickers
+    Object.keys(watchWsRefs.current).forEach(tk => {
+      if (!cryptoTickers.includes(tk)) {
+        watchWsRefs.current[tk]?.close();
+        delete watchWsRefs.current[tk];
+      }
+    });
+
+    cryptoTickers.forEach(tk => {
+      if (watchWsRefs.current[tk]) return;
+      const coin = tk.split('-')[0].toUpperCase();
+      try {
+        const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'candle', coin, interval: '1m' } }));
+        };
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.channel === 'candle' && msg.data?.c) {
+              const price = parseFloat(msg.data.c);
+              const open  = parseFloat(msg.data.o);
+              setWatchPrices(prev => {
+                const existing = prev[tk] || {};
+                const chgPct = open > 0 ? ((price - open) / open) * 100 : 0;
+                // Append to sparkline (max 60 points)
+                const spark = [...(existing.sparkline || []), price].slice(-60);
+                return { ...prev, [tk]: { price, open, chgPct, sparkline: spark } };
+              });
+            }
+          } catch {}
+        };
+        ws.onerror = () => {};
+        watchWsRefs.current[tk] = ws;
+      } catch {}
+    });
+
+    // ── Poll stock watchlist ──
+    const fetchStockWatch = async () => {
+      for (const tk of stockTickers) {
+        try {
+          const res = await axios.get(`${API}/api/apex-institutional/${tk}`, { timeout: 10000 });
+          const price = res.data?.price;
+          const open  = res.data?.open_price ?? price;
+          if (!price) continue;
+          const chgPct = open > 0 ? ((price - open) / open) * 100 : 0;
+          setWatchPrices(prev => {
+            const existing = prev[tk] || {};
+            const spark = [...(existing.sparkline || []), price].slice(-60);
+            return { ...prev, [tk]: { price, open, chgPct, sparkline: spark } };
+          });
+        } catch {}
+      }
+    };
+
+    if (stockTickers.length) {
+      fetchStockWatch();
+      const id = setInterval(fetchStockWatch, 15000);
+      return () => {
+        clearInterval(id);
+        Object.values(watchWsRefs.current).forEach(ws => ws?.close());
+        watchWsRefs.current = {};
+      };
+    }
+    return () => {
+      Object.values(watchWsRefs.current).forEach(ws => ws?.close());
+      watchWsRefs.current = {};
+    };
+  }, [watchlist]); // eslint-disable-line
+
+  // ═══════════════════════════════════════════════════════════════
+  //  STANDALONE CHART — bisa dibuka kapan saja, live WebSocket candle
+  // ═══════════════════════════════════════════════════════════════
+  const loadStandaloneChart = useCallback(async (ticker, tf = '1D') => {
+    if (!ticker) return;
+    setChartPanelLoading(true);
+    setLiveCandle(null);
+    // Close previous WS
+    if (chartWsRef.current) { chartWsRef.current.close(); chartWsRef.current = null; }
+
+    try {
+      const res = await axios.get(`${API}/api/analyze/${ticker.trim().toUpperCase()}?tf=${tf}`, { timeout: 20000 });
+      const data = res.data?.history ?? [];
+      setStandaloneChart({ data, tf, ticker: ticker.trim().toUpperCase() });
+
+      // ── Live WebSocket candle untuk crypto ──
+      if (isCrypto(ticker)) {
+        const coin = ticker.split('-')[0].toUpperCase();
+        try {
+          const ws = new WebSocket('wss://api.hyperliquid.xyz/ws');
+          ws.onopen = () => {
+            ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'candle', coin, interval: tf === '1D' ? '1m' : '1m' } }));
+          };
+          ws.onmessage = (e) => {
+            try {
+              const msg = JSON.parse(e.data);
+              if (msg.channel === 'candle' && msg.data) {
+                const d = msg.data;
+                setLiveCandle({
+                  time:   Math.floor(parseInt(d.t) / 1000),
+                  open:   parseFloat(d.o),
+                  high:   parseFloat(d.h),
+                  low:    parseFloat(d.l),
+                  close:  parseFloat(d.c),
+                  volume: parseFloat(d.v),
+                });
+              }
+            } catch {}
+          };
+          ws.onerror = () => {};
+          chartWsRef.current = ws;
+        } catch {}
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setChartPanelLoading(false);
+    }
+  }, []); // eslint-disable-line
+
+  // Re-load chart when TF changes
+  useEffect(() => {
+    if (standaloneChart?.ticker) {
+      loadStandaloneChart(standaloneChart.ticker, chartPanelTf);
+    }
+  }, [chartPanelTf]); // eslint-disable-line
+
+  // Cleanup chart WS on unmount
+  useEffect(() => {
+    return () => { chartWsRef.current?.close(); };
+  }, []);
+
   // Polling for non-crypto open positions (10s interval)
   useEffect(() => {
     if (!account) return;
@@ -476,24 +619,16 @@ export default function DemoTrading() {
     setTradeSetup(null);
 
     try {
-      // risk-size pakai Promise.resolve fallback kalau armor belum ready atau backend restart
-      const safeRiskSize = account?.armorReady
-        ? axios.post(`${API}/api/armor/risk-size`, {
-            session_id:    account.sessionId,
-            base_risk_pct: 2.0,
-            win_rate:      0.55,
-            rr_ratio:      2.0,
-          }).catch(e => {
-            // 400/404 = backend restart — jangan crash generateSignal
-            // 400/404/503 = backend restart — auto-reinit akan terjadi di refreshArmor
-            console.warn('[Armor] risk-size failed (backend restart?):', e?.response?.status);
-            return { data: null };
-          })
-        : Promise.resolve({ data: null });
-
       const [apexRes, riskRes, analyzeRes] = await Promise.all([
         axios.get(`${API}/api/apex-institutional/${sigTicker.trim()}`),
-        safeRiskSize,
+        account?.armorReady
+          ? axios.post(`${API}/api/armor/risk-size`, {
+              session_id:    account.sessionId,
+              base_risk_pct: 2.0,
+              win_rate:      0.55,
+              rr_ratio:      2.0,
+            })
+          : Promise.resolve({ data: null }),
         axios.get(`${API}/api/analyze/${sigTicker.trim()}`),
       ]);
 
@@ -896,6 +1031,142 @@ export default function DemoTrading() {
         {/* ═══ LEFT ═══════════════════════════════════════════ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+          {/* ── WATCHLIST ─────────────────────────────────────── */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13, padding: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--pos)', boxShadow: '0 0 5px var(--pos)' }} className="pulse-dot" />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Watchlist</span>
+              </div>
+              {/* Add ticker input */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  value={watchInput}
+                  onChange={e => setWatchInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && addToWatchlist()}
+                  placeholder="Add ticker…"
+                  style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink)', width: 110 }}
+                />
+                <button onClick={addToWatchlist} style={{ background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 8, color: '#fff', cursor: 'pointer', letterSpacing: '0.08em' }}>+</button>
+              </div>
+            </div>
+
+            {/* Watchlist grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {watchlist.map(tk => {
+                const wp = watchPrices[tk];
+                const chg = wp?.chgPct ?? 0;
+                const isPos = chg >= 0;
+                const spark = wp?.sparkline ?? [];
+                // Mini SVG sparkline
+                const sparkSvg = (() => {
+                  if (spark.length < 2) return null;
+                  const min = Math.min(...spark), max = Math.max(...spark);
+                  const range = max - min || 1;
+                  const w = 72, h = 26, pad = 2;
+                  const pts = spark.map((v, i) => {
+                    const x = (i / (spark.length - 1)) * (w - pad * 2) + pad;
+                    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+                    return `${x.toFixed(1)},${y.toFixed(1)}`;
+                  }).join(' ');
+                  const color = isPos ? '#22c55e' : '#ef4444';
+                  return (
+                    <svg width={w} height={h} style={{ display: 'block' }}>
+                      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
+                    </svg>
+                  );
+                })();
+
+                return (
+                  <div
+                    key={tk}
+                    onClick={() => { setChartTicker(tk); loadStandaloneChart(tk, chartPanelTf); }}
+                    style={{ background: 'var(--surface2)', border: `1px solid ${standaloneChart?.ticker === tk ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 9, padding: '10px 11px', cursor: 'pointer', position: 'relative', transition: 'border-color .15s' }}
+                  >
+                    {/* Remove btn */}
+                    <button
+                      onClick={e => { e.stopPropagation(); removeFromWatchlist(tk); }}
+                      style={{ position: 'absolute', top: 4, right: 6, background: 'none', border: 'none', color: 'var(--ink4)', fontSize: 9, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+                    >×</button>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+                        {tk.replace('-USD', '')}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: isPos ? 'var(--pos)' : 'var(--neg)' }}>
+                        {wp ? `${isPos ? '+' : ''}${chg.toFixed(2)}%` : '—'}
+                      </span>
+                    </div>
+
+                    <div style={{ marginBottom: 4 }}>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                        {wp?.price
+                          ? wp.price < 10 ? wp.price.toFixed(4) : wp.price < 1000 ? wp.price.toFixed(2) : wp.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : <span style={{ color: 'var(--ink4)', fontSize: 8 }}>Loading…</span>
+                        }
+                      </span>
+                    </div>
+
+                    {sparkSvg || <div style={{ height: 26 }} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── STANDALONE CHART PANEL ───────────────────────── */}
+          {(standaloneChart || chartPanelLoading) && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13, padding: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {isCrypto(standaloneChart?.ticker || '') && (
+                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--pos)', boxShadow: '0 0 5px var(--pos)' }} className="pulse-dot" />
+                    )}
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+                      {standaloneChart?.ticker || chartTicker}
+                    </span>
+                  </div>
+                  {/* TF buttons */}
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {['1D','1W','1M','1Y'].map(tf => (
+                      <button key={tf} onClick={() => setChartPanelTf(tf)} style={{ background: chartPanelTf === tf ? 'var(--accent)' : 'transparent', color: chartPanelTf === tf ? '#fff' : 'var(--ink3)', border: `1px solid ${chartPanelTf === tf ? 'transparent' : 'var(--border)'}`, borderRadius: 5, padding: '3px 9px', fontFamily: 'var(--mono)', fontSize: 8, fontWeight: chartPanelTf === tf ? 600 : 400, letterSpacing: '0.10em', cursor: 'pointer' }}>{tf}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {isCrypto(standaloneChart?.ticker || '') && liveCandle && (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--pos)', letterSpacing: '0.08em' }}>● LIVE</span>
+                  )}
+                  <button onClick={() => { setStandaloneChart(null); setLiveCandle(null); chartWsRef.current?.close(); }} style={{ background: 'none', border: 'none', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)', cursor: 'pointer' }}>✕ close</button>
+                </div>
+              </div>
+
+              <div style={{ height: 360, borderRadius: 10, overflow: 'hidden', background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                {chartPanelLoading ? (
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)' }}>Loading chart…</span>
+                  </div>
+                ) : standaloneChart?.data?.length ? (
+                  standaloneChart.data[0]?.open !== undefined ? (
+                    <PriceChart
+                      data={standaloneChart.data}
+                      settings={{ showEma1: true, ema1: 20, showEma2: true, ema2: 50, showVol: true }}
+                      liveCandle={isCrypto(standaloneChart.ticker) ? liveCandle : null}
+                      tf={standaloneChart.tf}
+                    />
+                  ) : (
+                    <MarketOverview data={standaloneChart.data} openPrice={standaloneChart.data[0]?.value} tf={standaloneChart.tf} />
+                  )
+                ) : (
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)' }}>No chart data</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── SIGNAL GENERATOR ─────────────────────────────── */}
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13, padding: 22 }}>
             {/* Header */}
@@ -952,7 +1223,7 @@ export default function DemoTrading() {
                               <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)' }}>Loading chart…</span>
                             </div>
                           ) : isOHLCV ? (
-                            <PriceChart data={chartData} settings={chartSettings} liveCandle={null} tf="1D" />
+                            <PriceChart data={chartData} settings={chartSettings} liveCandle={isCrypto(sigTicker) ? liveCandle : null} tf="1D" />
                           ) : (
                             <MarketOverview data={chartData} openPrice={chartData?.[0]?.value} tf="1D" />
                           )}

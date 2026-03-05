@@ -914,6 +914,14 @@ class EdgeDegradationMonitor:
         }
 
     @property
+    def status(self) -> str:
+        return self._status
+
+    @property
+    def suspend_reason(self) -> str:
+        return self._suspend_reason
+
+    @property
     def is_trading_permitted(self) -> bool:
         return self._status not in ("SUSPEND", "SHUTDOWN")
 
@@ -993,6 +1001,10 @@ class CompoundingModel:
     @property
     def total_balance(self) -> float:
         return self._tradeable_capital + self._locked_reserve
+
+    @property
+    def total_profit(self) -> float:
+        return self._total_profit
 
     def record_trade(
         self,
@@ -1449,7 +1461,7 @@ class EquityArmor:
             halt_reason = "DD_VELOCITY_HALT or EQUITY_BELOW_MA"
         elif not self.edge_monitor.is_trading_permitted:
             is_halted = True
-            halt_reason = f"EDGE_DEGRADED: {self.edge_monitor._suspend_reason}"
+            halt_reason = f"EDGE_DEGRADED: {self.edge_monitor.suspend_reason}"
 
         if is_halted and not self._halted:
             self._halted = True
@@ -1619,7 +1631,7 @@ class EquityArmor:
                 "total_balance": round(self.compounder.total_balance, 2),
                 "total_profit": round(self.compounder.total_profit, 2),
             },
-            "edge_status": self.edge_monitor._status,
+            "edge_status": self.edge_monitor.status,
             "edge_size_scale": round(self.edge_monitor.edge_size_scale, 4),
             "trade_count": self._trade_count,
             "win_streak": self._win_streak,
@@ -2231,9 +2243,7 @@ def armor_init(req: ArmorInitRequest):
 def armor_update(req: ArmorUpdateRequest):
     global _armor_instance
     if _armor_instance is None:
-        # 503 = service restart / state lost, beda dengan 400 bad request
-        # Frontend bisa deteksi ini dan auto-reinit
-        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
+        raise HTTPException(400, "Armor not initialized. Call /api/armor/init first.")
     result = _armor_instance.update(
         current_balance=req.current_balance,
         date=req.date,
@@ -2246,7 +2256,7 @@ def armor_update(req: ArmorUpdateRequest):
 def armor_record(req: ArmorTradeRequest):
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
+        raise HTTPException(400, "Armor not initialized.")
     return sanitize_data(_armor_instance.record_trade(req.pnl_usd, req.is_win, req.date))
 
 
@@ -2262,7 +2272,7 @@ def armor_status():
 def armor_risk_size(req: ArmorRiskRequest):
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
+        raise HTTPException(400, "Armor not initialized.")
     return sanitize_data(_armor_instance.get_position_risk_pct(
         base_risk_pct=req.base_risk_pct,
         win_rate=req.win_rate,
@@ -2305,7 +2315,7 @@ def armor_full_report():
 def armor_milestones():
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
+        raise HTTPException(400, "Armor not initialized.")
     ms = _armor_instance.milestone_tracker
     return sanitize_data({
         "active_milestone": ms.active_milestone.description,
