@@ -171,8 +171,8 @@ HL_EXCHANGE_URL = "https://api.hyperliquid.xyz/exchange"
 WS_PING_INTERVAL    = 15.0   # Hyperliquid requires ping every 15s
 WS_RECONNECT_INIT   = 0.5    # initial reconnect delay
 WS_RECONNECT_MAX    = 5.0    # max reconnect delay
-WS_STALE_THRESHOLD  = 10.0   # detik sebelum dianggap stale
-WS_WARMUP_SECONDS   = 2.5    # tunggu sebelum engine loop mulai
+WS_STALE_THRESHOLD  = 30.0   # 30s sebelum dianggap stale (allMids push ~1s interval)
+WS_WARMUP_SECONDS   = 4.0    # lebih lama — semua 12 coin harus subscribe l2Book
 
 # ── Maker Order Engine params ─────────────────────────────────────
 MAKER_TIMEOUT_MS    = 200    # cancel jika tidak fill dalam 200ms
@@ -1150,70 +1150,84 @@ class RapidConfig:
     - Engine 4 BARU: Spoof Detector via L3 anomali
     """
 
-    # ── Universe ─────────────────────────────────────────────────
+    # ── Universe — hanya liquid coins dengan tight spread ────────
+    # Sengaja dikurangi dari 65 → 12 coin.
+    # Alasan: ADA/DOGE/meme coins = spread 0.024%+ per side → fees dimakan spread.
+    # Hanya BTC/ETH/SOL/BNB/XRP yang konsisten spread <0.01%.
     watchlist: List[str] = field(default_factory=lambda: [
-        "BTC","ETH","SOL","BNB","XRP",
-        "DOGE","ADA","AVAX","LINK","MATIC",
-        "APT","ARB","OP","SUI","INJ",
-        "LTC","ATOM","NEAR","FTM","FIL",
-        "TRB","PEPE","WIF","BOME","MEME",
-        "ONDO","ENA","AERO","BB","ZRO",
-        "JUP","RAY","ORCA","JTO","PYTH",
-        "DYDX","GMX","GNS","PENDLE","LQTY",
-        "ENS","ZEC","MINA","ICP","TAO",
-        "RNDR","FET","AGIX","OCEAN","AI",
-        "SEI","BLUR","WLD","NFP","AXS",
-        "FLOW","MANA","SAND","GALA","APE",
-        "CRV","CVX","AAVE","MKR","COMP",
-        "SNX","BAL","UNI","SUSHI","YFI",
+        "BTC", "ETH", "SOL", "BNB", "XRP",
+        "AVAX", "LINK", "MATIC", "APT", "ARB",
+        "SUI", "INJ",
     ])
 
-    # ── Entry Engine 1 — Burst Detector (ULTRA) ──────────────────
-    burst_window       : int   = 4      # lebih banyak history → akurasi lebih baik
-    min_streak         : int   = 2      # 2 = paling agresif, sinyal terbanyak
-    min_move_pct       : float = 0.003  # turun 0.005→0.003 → lebih sensitif micro-move
-    ofi_floor          : float = 0.20   # sangat longgar, hanya block extreme
-    ofi_ceiling        : float = 0.80   # sangat longgar
-    max_spread_pct     : float = 0.25   # sedikit lebih toleran
+    # ── Entry Engine 1 — Burst Detector ─────────────────────────
+    # KENAIKAN THRESHOLD: sinyal harus cukup kuat untuk cover fees
+    # Fee RT taker = 0.07% → min_move harus ≥ 0.06% agar ada ruang profit
+    burst_window       : int   = 6      # 6 tick history untuk konfirmasi trend
+    min_streak         : int   = 3      # butuh 3 consecutive moves (bukan 2)
+    min_move_pct       : float = 0.060  # KRITIS: harus ≥ fee RT (0.07%) sbg proxy
+    ofi_floor          : float = 0.38   # OFI harus condong ke arah entry (real pressure)
+    ofi_ceiling        : float = 0.62   # simetris
+    max_spread_pct     : float = 0.08   # block coins dengan spread lebar (ADA dll)
 
-    # ── Entry Engine 2 — Micro Pullback (ULTRA) ──────────────────
+    # ── Entry Engine 2 — Micro Pullback ──────────────────────────
     pullback_enabled        : bool  = True
-    pullback_min_trend_ticks: int   = 2
-    pullback_max_pct        : float = 0.030  # sedikit lebih dalam boleh
-    pullback_min_move_pct   : float = 0.003
-    pullback_cooldown       : float = 0.15   # turun 0.3→0.15s → re-entry lebih cepat
+    pullback_min_trend_ticks: int   = 3
+    pullback_max_pct        : float = 0.040
+    pullback_min_move_pct   : float = 0.060  # sama dengan burst min_move
+    pullback_cooldown       : float = 1.5    # cooldown realistis untuk sinyal kuat
 
-    # ── Entry Engine 3 — Acceleration Spike (BARU!) ──────────────
-    accel_enabled      : bool  = True    # aktifkan engine 3
-    accel_window       : int   = 5       # track 5 timestamp tick terakhir
-    accel_ratio        : float = 1.4     # interval harus 1.4x lebih cepat
-    accel_min_move_pct : float = 0.003   # min total price move dalam accel window
-    accel_cooldown     : float = 0.30    # cooldown engine 3
+    # ── Entry Engine 3 — Acceleration Spike ──────────────────────
+    accel_enabled      : bool  = True
+    accel_window       : int   = 5
+    accel_ratio        : float = 1.8     # acceleration harus lebih kuat
+    accel_min_move_pct : float = 0.060
+    accel_cooldown     : float = 2.0
 
-    # ── Multi-Position Per Coin (BARU!) ──────────────────────────
-    allow_multi_pos_per_coin: bool = True  # beda engine boleh buka bersamaan
-    max_pos_per_coin        : int  = 2     # max 2 posisi per coin
+    # ── Multi-Position Per Coin ───────────────────────────────────
+    allow_multi_pos_per_coin: bool = False  # satu posisi per coin, lebih aman
+    max_pos_per_coin        : int  = 1
 
-    # ── Exit — ULTRA Blade ────────────────────────────────────────
-    tp_pct             : float = 0.04   # turun 0.07→0.04% — jauh lebih sering hit
-    sl_pct             : float = 0.05   # turun 0.06→0.05% — cut loss cepat
-    flip_threshold_pct : float = 0.03   # lebih sensitif 0.04→0.03%
-    max_hold_seconds   : int   = 6      # turun 8→6s — timeout lebih ketat
+    # ── Exit — Profitable Math ────────────────────────────────────
+    # KALKULASI:
+    #   Fee taker RT = 0.07% (0.035% per side × 2)
+    #   TP net minimum = 0.07% fee + 0.08% profit = 0.15%
+    #   SL net = 0.09% + 0.07% fee = -0.16% → R:R = 0.08/0.16 = 1:2 favorabel
+    #
+    # Sebelumnya: TP=0.04% < fee=0.07% → MUSTAHIL profit.
+    tp_pct             : float = 0.18   # Net setelah fee = +0.11% per win
+    sl_pct             : float = 0.10   # Net setelah fee = -0.17% per loss → R:R 0.64
+    flip_threshold_pct : float = 0.06   # flip harus signifikan (bukan noise)
+    max_hold_seconds   : int   = 90     # cukup waktu untuk 0.18% move (dari 6s!)
 
-    # ── Execution ULTRA ────────────────────────────────────────────
-    scan_interval      : float = 0.015  # 15ms — 7x lebih cepat dari 0.07s (!)
-    capital_per_trade  : float = 50.0   # USD per posisi (Kelly akan override jika aktif)
-    max_positions      : int   = 20     # naik 10→20 posisi parallel
-    hot_coins_l2       : int   = 6      # L2 book untuk 6 coin terpanas
+    # ── Smart Exit — Trailing Stop & Break-Even ───────────────────
+    trailing_stop_enabled  : bool  = True
+    trailing_arm_pct       : float = 0.10  # arm trailing saat unrealized ≥ 0.10%
+    trailing_distance_pct  : float = 0.06  # trail 0.06% dari peak (lock ~40% profit)
 
-    # ── Burst Cooldown Per Engine (ULTRA) ─────────────────────────
-    burst_cooldown     : float = 0.50   # DRASTIS: 2.0→0.5s — 4x lebih agresif
+    breakeven_enabled      : bool  = True
+    breakeven_arm_pct      : float = 0.09  # move SL ke entry saat unrealized ≥ 0.09%
+
+    # ── Smart Timeout (bukan hard timeout) ───────────────────────
+    # Jika posisi masih trending + unrealized > 0: extend hold
+    smart_timeout_enabled  : bool  = True
+    smart_timeout_extend_s : int   = 30   # extend hold 30s jika masih trending
+    smart_timeout_max_ext  : int   = 2    # max 2x extend (total 90+60=150s)
+
+    # ── Execution ─────────────────────────────────────────────────
+    scan_interval      : float = 0.010  # 10ms scan
+    capital_per_trade  : float = 50.0   # USD per posisi
+    max_positions      : int   = 6      # kurangi dari 20 → fokus pada sinyal terkuat
+    hot_coins_l2       : int   = 12     # semua 12 coin dapat L2 orderbook
+
+    # ── Burst Cooldown Per Engine ─────────────────────────────────
+    burst_cooldown     : float = 2.0    # 2s cooldown (was 0.5s → terlalu agresif)
 
     # ── Equity Lock (The Vault) ───────────────────────────────────
-    lock_step_pct      : float = 0.30   # lebih sering lock (tiap 0.3% gain)
-    lock_ratio         : float = 0.60   # kunci 60% gains
-    max_daily_dd_pct   : float = 3.0    # daily hard stop
-    max_loss_streak    : int   = 10     # lebih toleran sebelum pause
+    lock_step_pct      : float = 0.30
+    lock_ratio         : float = 0.60
+    max_daily_dd_pct   : float = 3.0
+    max_loss_streak    : int   = 6      # pause lebih cepat setelah streak loss
 
     # ── Fee model ─────────────────────────────────────────────────
     fee_pct            : float = FEE_PER_SIDE
@@ -1221,35 +1235,32 @@ class RapidConfig:
     # ══ v5.0 NEW PARAMETERS ═══════════════════════════════════════
 
     # ── FIX 1: Persistent Order Connection ────────────────────────
-    prewarm_connection : bool  = True   # pre-warm TCP/TLS saat startup
+    prewarm_connection : bool  = True
 
     # ── FIX 2: Maker Order Engine ─────────────────────────────────
-    maker_mode         : bool  = True   # True = coba maker order dulu
-    maker_timeout_ms   : int   = 200    # cancel maker jika tidak fill
-    # Force market jika momentum sangat kuat (streak ≥ threshold)
-    force_market_streak: int   = 3      # streak ≥ 3 = momentum kuat → market
+    maker_mode         : bool  = True   # coba maker dulu (fee 0.01% vs 0.035%)
+    maker_timeout_ms   : int   = 300    # lebih lama untuk fill
+    force_market_streak: int   = 4      # streak ≥ 4 → momentum kuat → market
 
     # ── FIX 4: L3 Order Book Gate ─────────────────────────────────
-    use_l3_gate        : bool  = True   # konfirmasi entry via L3 imbalance
-    l3_imbalance_gate  : float = 0.15   # block jika imbalance < threshold vs direction
-    # |imbalance| ≥ 0.15 ke arah yang benar → confirm
-    # |imbalance| < 0.15 atau berlawanan → block
-    l3_depth_coins     : int   = 10     # L3 reconstruction untuk 10 coin (vs 6 L2)
+    use_l3_gate        : bool  = True
+    l3_imbalance_gate  : float = 0.20   # lebih ketat dari 0.15
+    l3_depth_coins     : int   = 12     # semua hot coins
 
     # ── BONUS: Regime Filter ───────────────────────────────────────
-    use_regime_filter  : bool  = True   # sesuaikan TP/SL/size berdasarkan regime
-    block_on_dead_regime: bool = True   # pause trading saat regime DEAD
+    use_regime_filter  : bool  = True
+    block_on_dead_regime: bool = True
 
     # ── BONUS: Kelly Criterion Sizing ─────────────────────────────
-    use_kelly_sizing   : bool  = True   # dynamic sizing via Half-Kelly
-    kelly_min_trades   : int   = 20     # minimum trades sebelum Kelly aktif
-    kelly_max_risk_pct : float = 3.0    # max % ekuitas per trade
+    use_kelly_sizing   : bool  = True
+    kelly_min_trades   : int   = 15
+    kelly_max_risk_pct : float = 2.0    # max 2% equity per trade (lebih konservatif)
 
     # ── BONUS: Adaptive Threshold Tuner ───────────────────────────
-    use_adaptive_tuner : bool  = True   # auto-tune threshold via WR feedback
+    use_adaptive_tuner : bool  = True
 
     # ── BONUS: Spoof Protection (Engine 4) ────────────────────────
-    spoof_protection   : bool  = True   # block entry jika spoof terdeteksi
+    spoof_protection   : bool  = True
 
 
 
@@ -1299,7 +1310,13 @@ class ScalpPosition:
     capital     : float
     opened_at   : float
     status      : str = "OPEN"
-    peak_pnl    : float = 0.0    # peak unrealized PnL (untuk trailing mental)
+    peak_pnl    : float = 0.0    # peak unrealized PnL
+
+    # ── v6.0: Smart Exit State ────────────────────────────────────
+    trail_stop_px  : float = 0.0   # trailing stop price (0 = belum armed)
+    trail_armed    : bool  = False  # True setelah reach trailing_arm_pct
+    be_armed       : bool  = False  # True setelah reach breakeven_arm_pct
+    extend_count   : int   = 0     # berapa kali timeout sudah di-extend
 
     @property
     def hold_seconds(self) -> float:
@@ -1334,15 +1351,20 @@ class ScalpPosition:
             "entry_price"   : round(self.entry_price, 6),
             "current_price" : round(self.current_price, 6),
             "stop_price"    : round(self.stop_price, 6),
-            "take_profit"   : round(self.tp_price, 6),    # Predator kompatibel
-            "tp_price"      : round(self.tp_price, 6),    # Jackal kompatibel: pos.tp_price
+            "take_profit"   : round(self.tp_price, 6),
+            "tp_price"      : round(self.tp_price, 6),
             "qty"           : round(self.qty, 6),
             "capital"       : round(self.capital, 2),
             "unrealized_pnl": round(self.unrealized_pnl, 4),
-            "unrealized_pct": round(unr_pct, 4),          # frontend: pos.unrealized_pct
-            "peak_pnl"      : round(self.peak_pnl, 4),   # frontend: pos.peak_pnl
+            "unrealized_pct": round(unr_pct, 4),
+            "peak_pnl"      : round(self.peak_pnl, 4),
             "hold_seconds"  : round(self.hold_seconds, 1),
             "status"        : self.status,
+            # ── v6.0 smart exit state ─────────────────────────────
+            "trail_armed"   : self.trail_armed,
+            "trail_stop_px" : round(self.trail_stop_px, 6) if self.trail_stop_px else 0,
+            "be_armed"      : self.be_armed,
+            "extend_count"  : self.extend_count,
         }
 
 
@@ -1528,6 +1550,24 @@ class BurstState:
         if direction == "SHORT" and recent_move >  flip_threshold_pct:
             return True
         return False
+
+    def check_trend_continues(self, direction: str) -> bool:
+        """
+        Cek apakah trend masih berjalan ke arah yang sama.
+        Dipakai oleh smart_timeout: jika masih trending, extend hold.
+
+        Return True jika 2 dari 3 tick terakhir masih searah direction.
+        """
+        if len(self.prices) < 4:
+            return False
+        prices = list(self.prices)[-4:]
+        moves  = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+        if direction == "LONG":
+            positive = sum(1 for m in moves if m > 0)
+            return positive >= 2
+        else:
+            negative = sum(1 for m in moves if m < 0)
+            return negative >= 2
 
     def detect_pullback(self, min_trend_ticks: int, pullback_max_pct: float,
                         min_move_pct: float, max_spread_pct: float
@@ -1856,7 +1896,7 @@ class RapidStats:
         self.max_drawdown        : float = 0.0
         self.consecutive_losses  : int   = 0
         self.max_consec_losses   : int   = 0
-        self.exit_breakdown      : Dict[str, int] = {"TP": 0, "SL": 0, "FLIP": 0, "TIMEOUT": 0, "MANUAL": 0, "TRAIL": 0}
+        self.exit_breakdown      : Dict[str, int] = {"TP": 0, "SL": 0, "FLIP": 0, "TIMEOUT": 0, "MANUAL": 0, "TRAIL": 0, "TRAIL_STOP": 0, "EXTEND": 0}
         self.trades_ts           : List[float] = []
         self._start_ts           : float = time.time()
         # Fields untuk frontend stats panel
@@ -2010,9 +2050,8 @@ class WSFeedManager:
         self.hot_coins_count  = hot_coins_count
 
         # Shared tick cache — diupdate oleh WS, dibaca oleh engine loop
-        # Key: coin str, Value: BurstTick
         self.cache            : Dict[str, BurstTick] = {}
-        self._cache_ts        : Dict[str, float]     = {}  # last update time per coin
+        self._cache_ts        : Dict[str, float]     = {}
 
         # Connection state
         self._allmids_task    : Optional[asyncio.Task] = None
@@ -2025,11 +2064,12 @@ class WSFeedManager:
         self._last_allmids_ts : float = 0.0
         self._last_book_ts    : float = 0.0
 
-        # Callback untuk saat harga diupdate (opsional, untuk event-driven trigger)
+        # Callback untuk event-driven trigger
         self._on_price_cb     = None
 
-        # Hot coins list (bisa diupdate dinamis)
-        self._hot_coins       : List[str] = watchlist[:hot_coins_count]
+        # v6.0: Subscribe SEMUA coin ke l2Book (bukan hanya hot coins)
+        # Dengan 12 coin watchlist, ini feasible dan memberikan OFI real untuk semua coin
+        self._hot_coins       : List[str] = watchlist[:]   # semua coin dapat l2Book
 
     def set_price_callback(self, cb):
         """Register callback yang dipanggil setiap ada update harga."""
@@ -2553,36 +2593,49 @@ class RapidScalper:
 
         # ── WS Feed Manager ───────────────────────────────────────
         if HAS_WS:
-            l2_count = max(self.config.hot_coins_l2, self.config.l3_depth_coins)
+            # v6.0: dengan 12 coin watchlist, subscribe semua ke l2Book
             self._ws_feed = WSFeedManager(
                 watchlist       = self.config.watchlist,
-                hot_coins_count = l2_count,
+                hot_coins_count = len(self.config.watchlist),  # semua coin
             )
+            # ── WS Push Callback: update posisi LANGSUNG saat tick masuk ──
+            # Ini menghilangkan latency polling loop 10ms
+            def _ws_price_push(coin: str, tick: "BurstTick"):
+                """Called by WSFeedManager setiap ada harga baru."""
+                try:
+                    for pos in self._open_positions():
+                        if pos.coin == coin and pos.status == "OPEN":
+                            pos.current_price = tick.mid
+                except Exception:
+                    pass
+            self._ws_feed.set_price_callback(_ws_price_push)
             await self._ws_feed.start()
             self._log("FEED", (
-                f" WebSocket feed started — {len(self.config.watchlist)} coins, "
-                f"{l2_count} with L2/L3 orderbook"
+                f"✅ WebSocket feed started — {len(self.config.watchlist)} coins, "
+                f"ALL with real l2Book OFI | push callback active"
             ))
             await asyncio.sleep(WS_WARMUP_SECONDS)
         else:
-            self._log("FEED", " websockets not installed — using REST fallback (slower)")
+            self._log("FEED", "⚠️ websockets not installed — using REST fallback (slower)")
 
-        # ── FIX 4: Init L3 Order Books untuk hot coins ────────────
-        hot_coins = self.config.watchlist[:self.config.l3_depth_coins]
-        for coin in hot_coins:
+        # ── FIX 4: Init L3 Order Books untuk semua coins ──────────
+        for coin in self.config.watchlist:
             self._l3_books[coin] = L3OrderBook(coin, depth=L3_DEPTH_LEVELS)
-        self._log("L3", f" L3 OrderBook initialized for {len(hot_coins)} coins")
+        self._log("L3", f" L3 OrderBook initialized for {len(self.config.watchlist)} coins")
 
         # ── Log semua fitur aktif ─────────────────────────────────
         features = []
-        if self.config.maker_mode:       features.append("MakerOrders")
-        if self.config.use_l3_gate:      features.append("L3Gate")
-        if self.config.use_regime_filter:features.append("RegimeFilter")
-        if self.config.use_kelly_sizing: features.append("KellySizing")
-        if self.config.use_adaptive_tuner:features.append("AdaptiveTuner")
-        if self.config.spoof_protection: features.append("SpoofGuard")
-        if HAS_NUMBA:                    features.append("NumbaJIT")
-        self._log("ENGINE", f" Jackal ULTRA v5.0 awakens — {' | '.join(features)}")
+        if self.config.maker_mode:          features.append("MakerOrders")
+        if self.config.use_l3_gate:         features.append("L3Gate")
+        if self.config.use_regime_filter:   features.append("RegimeFilter")
+        if self.config.use_kelly_sizing:    features.append("KellySizing")
+        if self.config.use_adaptive_tuner:  features.append("AdaptiveTuner")
+        if self.config.spoof_protection:    features.append("SpoofGuard")
+        if self.config.trailing_stop_enabled: features.append("TrailingStop")
+        if self.config.breakeven_enabled:   features.append("BreakEven")
+        if self.config.smart_timeout_enabled: features.append("SmartTimeout")
+        if HAS_NUMBA:                       features.append("NumbaJIT")
+        self._log("ENGINE", f"🚀 Jackal ULTRA v6.0 awakens — {' | '.join(features)}")
 
         self._task = asyncio.create_task(self._main_loop())
 
@@ -3084,41 +3137,69 @@ class RapidScalper:
         meta      : dict,
     ) -> bool:
         """
-        Central gate checker untuk semua v5.0 filters.
+        Central gate checker untuk semua v5.0 + v6.0 filters.
         Return False jika ada satu gate yang fail → blok entry.
 
-        Gates (semua bisa disable via config):
-        1. L3 Imbalance Gate — imbalance harus searah dengan signal
-        2. Spoof Protection Gate — tidak ada spoof di arah masuk
+        Gates:
+        0. Fee-Aware Profitability Gate — move harus cukup untuk cover fees
+        1. Spread Gate — spread terlalu lebar = fee dimakan spread
+        2. L3 Imbalance Gate — imbalance harus searah dengan signal
+        3. Spoof Protection Gate — tidak ada spoof di arah masuk
+        4. SignalIntelligenceGate (Kyle Lambda / toxic flow)
+        5. AlphaSignalEngine (funding rate + OI)
         """
-        # ── L3 Imbalance Gate ─────────────────────────────────────
+        # ── Gate 0: Fee-Aware Profitability Gate ─────────────────
+        # Gerakan yang sudah terjadi (move_pct dari meta) harus cukup
+        # sebagai proxy bahwa momentum cukup kuat untuk reach TP.
+        # Fee RT taker = 0.07%, maker = 0.02%.
+        # Jika move_pct < 50% dari tp_pct → sinyal terlalu lemah.
+        move_pct = meta.get("move_pct", 0.0)
+        fee_rt   = FEE_TAKER * 2  # 0.07% default worst case
+        if self.config.maker_mode:
+            fee_rt = FEE_MAKER * 2  # 0.02%
+        min_required = self.config.tp_pct * 0.40  # 40% dari TP sebagai filter
+        if move_pct > 0 and move_pct < min_required:
+            self._log("FEE_GATE", f"{coin}: move={move_pct:.4f}% < min={min_required:.4f}%")
+            return False
+
+        # ── Gate 0b: Spread Gate ──────────────────────────────────
+        # Spread dimakan saat entry DAN exit. Blokir jika spread > TP / 2.
+        burst = self._burst.get(coin)
+        if burst and burst.ticks:
+            tick = burst.ticks[-1]
+            if hasattr(tick, 'spread_pct') and tick.spread_pct > self.config.max_spread_pct:
+                return False
+            # Ekstra: jika spread sendiri > 40% dari TP → gak masuk akal
+            tp_pct = self.config.tp_pct
+            if hasattr(tick, 'spread_pct') and tick.spread_pct > tp_pct * 0.40:
+                self._log("SPREAD_GATE", f"{coin}: spread={tick.spread_pct:.4f}% > {tp_pct*0.4:.4f}%")
+                return False
+
+        # ── Gate 1: L3 Imbalance Gate ─────────────────────────────
         if self.config.use_l3_gate:
-            # imbalance > 0 = bid pressure = LONG-friendly
-            # imbalance < 0 = ask pressure = SHORT-friendly
             threshold = self.config.l3_imbalance_gate
             if direction == "LONG"  and l3_imbalance < -threshold:
-                return False   # L3 book strongly against LONG
+                return False
             if direction == "SHORT" and l3_imbalance >  threshold:
-                return False   # L3 book strongly against SHORT
+                return False
 
-        # ── Spoof Protection Gate ─────────────────────────────────
+        # ── Gate 2: Spoof Protection Gate ─────────────────────────
         if self.config.spoof_protection:
             if self._spoof_guard.is_spoof_environment(coin, direction):
                 return False
 
-        # ── APEX Gate 3: SignalIntelligenceGate (Kyle's Lambda / toxic flow) ─
+        # ── Gate 3: SignalIntelligenceGate (Kyle's Lambda / toxic flow) ─
         if self._intel_gate is not None:
             try:
                 intel_result = self._intel_gate.evaluate_entry(coin, direction=direction)
                 if not intel_result.approved:
                     self._log("INTEL_BLOCK", f"{coin}[{direction}]: {intel_result.block_reason}")
                     return False
-                # Pass size_scalar to meta dict so _enter_position_v5 can use it
                 meta["apex_intel_scalar"] = getattr(intel_result, "final_size_scalar", 1.0)
             except Exception:
                 pass
 
-        # ── APEX Gate 4: AlphaSignalEngine (funding rate + OI) ────────────
+        # ── Gate 4: AlphaSignalEngine (funding rate + OI) ────────
         if self._alpha_engine is not None:
             try:
                 alpha_result = self._alpha_engine.get_alpha(coin, intended_dir=direction)
@@ -3234,13 +3315,17 @@ class RapidScalper:
 
         regime_tag  = meta.get("regime", "")
         fee_pct     = FEE_MAKER if exec_type == "MAKER" else FEE_TAKER
+        fee_rt      = fee_pct * 2
+        net_tp_pct  = effective_tp - fee_rt
+        net_sl_pct  = -(self.config.sl_pct + fee_rt)
         self._log("ENTRY", (
             f"{'🟢' if direction == 'LONG' else '🔴'} {direction} {coin} "
             f"@ ${entry:,.4f} [{exec_type}|{pos._engine.upper()}] "  # type: ignore
             f"TP ${tp_price:,.4f} SL ${stop_price:,.4f} | "
+            f"NetTP {net_tp_pct:+.3f}% NetSL {net_sl_pct:.3f}% | "
             f"${effective_capital:.0f} | "
-            f"streak={meta.get('streak',0)} L3={meta.get('l3_imbalance',0):.2f} "
-            f"fee={fee_pct}% regime={regime_tag}"
+            f"streak={meta.get('streak',0)} move={meta.get('move_pct',0):.4f}% "
+            f"OFI={meta.get('ofi',0.5):.2f} fee={fee_pct}%"
         ))
 
     # ─── ENTRY SCANNER v4.0 (Sync — Legacy, masih bisa dipanggil) ──
@@ -3391,10 +3476,49 @@ class RapidScalper:
 
     def _update_positions(self, ticks: Dict[str, BurstTick]):
         for pos in self._open_positions():
-            if pos.coin in ticks:
-                pos.current_price = ticks[pos.coin].mid
-                if pos.unrealized_pnl > pos.peak_pnl:
-                    pos.peak_pnl = pos.unrealized_pnl
+            if pos.coin not in ticks:
+                continue
+            tick = ticks[pos.coin]
+            pos.current_price = tick.mid
+            upnl = pos.unrealized_pnl
+            if upnl > pos.peak_pnl:
+                pos.peak_pnl = upnl
+
+            upnl_pct = (upnl / pos.capital) * 100
+
+            # ── Break-even Stop ───────────────────────────────────
+            # Saat unrealized ≥ breakeven_arm_pct, move stop ke entry
+            if (self.config.breakeven_enabled and not pos.be_armed
+                    and upnl_pct >= self.config.breakeven_arm_pct):
+                pos.be_armed = True
+                # Geser stop price ke entry + sedikit buffer (0.01%) untuk hindari slippage kick
+                if pos.direction == "LONG":
+                    new_sl = pos.entry_price * (1 + 0.010 / 100)
+                else:
+                    new_sl = pos.entry_price * (1 - 0.010 / 100)
+                if pos.direction == "LONG" and new_sl > pos.stop_price:
+                    pos.stop_price = new_sl
+                elif pos.direction == "SHORT" and new_sl < pos.stop_price:
+                    pos.stop_price = new_sl
+                self._log("BE", f"🔒 {pos.coin} Break-even armed @ {pos.stop_price:.6f}")
+
+            # ── Trailing Stop ─────────────────────────────────────
+            # Saat unrealized ≥ trailing_arm_pct, track peak dan trail
+            if self.config.trailing_stop_enabled:
+                if not pos.trail_armed and upnl_pct >= self.config.trailing_arm_pct:
+                    pos.trail_armed = True
+                    self._log("TRAIL", f"🎯 {pos.coin} Trailing armed, peak={upnl_pct:.3f}%")
+
+                if pos.trail_armed:
+                    dist_mult = self.config.trailing_distance_pct / 100
+                    if pos.direction == "LONG":
+                        new_trail = pos.current_price * (1 - dist_mult)
+                        if new_trail > pos.trail_stop_px:
+                            pos.trail_stop_px = new_trail
+                    else:
+                        new_trail = pos.current_price * (1 + dist_mult)
+                        if pos.trail_stop_px == 0 or new_trail < pos.trail_stop_px:
+                            pos.trail_stop_px = new_trail
 
     def _check_exits(self):
         for pos in list(self._open_positions()):
@@ -3404,13 +3528,46 @@ class RapidScalper:
                 reason = "TP"
             elif pos.should_sl():
                 reason = "SL"
-            elif pos.should_timeout(self.config.max_hold_seconds):
-                reason = "TIMEOUT"
+            # ── Trailing Stop (prioritas tinggi saat armed) ───────
+            elif (pos.trail_armed and pos.trail_stop_px > 0):
+                if pos.direction == "LONG" and pos.current_price <= pos.trail_stop_px:
+                    reason = "TRAIL_STOP"
+                elif pos.direction == "SHORT" and pos.current_price >= pos.trail_stop_px:
+                    reason = "TRAIL_STOP"
+            # ── Flip Signal ───────────────────────────────────────
             elif (pos.coin in self._burst and
                   self._burst[pos.coin].check_flip(
                       pos.direction, pos.entry_price,
                       self.config.flip_threshold_pct)):
-                reason = "FLIP"
+                # Jika sudah profit (trail armed / be armed), keluar saja
+                # Jika masih rugi, tunggu dulu (mungkin false flip)
+                upnl_pct = (pos.unrealized_pnl / pos.capital) * 100
+                if pos.trail_armed or pos.be_armed or upnl_pct < -0.02:
+                    reason = "FLIP"
+            # ── Smart Timeout ─────────────────────────────────────
+            elif pos.should_timeout(self.config.max_hold_seconds):
+                if self.config.smart_timeout_enabled:
+                    upnl_pct = (pos.unrealized_pnl / pos.capital) * 100
+                    # Extend jika: masih profit tipis ATAU masih trending sesuai arah
+                    still_trending = (
+                        pos.coin in self._burst and
+                        self._burst[pos.coin].check_trend_continues(pos.direction)
+                    )
+                    can_extend = pos.extend_count < self.config.smart_timeout_max_ext
+                    if can_extend and (upnl_pct > 0 or still_trending):
+                        # Extend: reset timer
+                        pos.opened_at = time.time() - (
+                            self.config.max_hold_seconds - self.config.smart_timeout_extend_s
+                        )
+                        pos.extend_count += 1
+                        self._log("EXTEND", (
+                            f"⏳ {pos.coin} Hold extended #{pos.extend_count} "
+                            f"(upnl={upnl_pct:+.3f}% trending={still_trending})"
+                        ))
+                    else:
+                        reason = "TIMEOUT"
+                else:
+                    reason = "TIMEOUT"
 
             if reason:
                 self._close_position(pos, reason)
@@ -3646,18 +3803,27 @@ class RapidScalper:
         l3_snap      = {c: b.to_dict() for c, b in list(self._l3_books.items())[:5]}
 
         features_active = {
-            "maker_mode"     : self.config.maker_mode,
-            "l3_gate"        : self.config.use_l3_gate,
-            "regime_filter"  : self.config.use_regime_filter,
-            "kelly_sizing"   : self.config.use_kelly_sizing,
-            "adaptive_tuner" : self.config.use_adaptive_tuner,
-            "spoof_protection": self.config.spoof_protection,
-            "numba_jit"      : HAS_NUMBA,
-            "sorted_dict"    : HAS_SORTED,
+            "maker_mode"       : self.config.maker_mode,
+            "l3_gate"          : self.config.use_l3_gate,
+            "regime_filter"    : self.config.use_regime_filter,
+            "kelly_sizing"     : self.config.use_kelly_sizing,
+            "adaptive_tuner"   : self.config.use_adaptive_tuner,
+            "spoof_protection" : self.config.spoof_protection,
+            "trailing_stop"    : self.config.trailing_stop_enabled,
+            "breakeven_stop"   : self.config.breakeven_enabled,
+            "smart_timeout"    : self.config.smart_timeout_enabled,
+            "numba_jit"        : HAS_NUMBA,
+            "sorted_dict"      : HAS_SORTED,
         }
 
+        # Fee math summary
+        fee_rt       = FEE_RT_MAKER if self.config.maker_mode else FEE_RT
+        net_tp       = round(self.config.tp_pct - fee_rt, 4)
+        net_sl       = round(-(self.config.sl_pct + fee_rt), 4)
+        rr_ratio     = round(abs(net_tp / net_sl), 2) if net_sl != 0 else 0
+
         return {
-            # ── Core (backward compat dengan frontend v4.0) ───────
+            # ── Core ──────────────────────────────────────────────
             "running"           : self.running,
             "balance"           : round(self.balance, 4),
             "total_equity"      : round(total_eq, 4),
@@ -3677,10 +3843,10 @@ class RapidScalper:
             "burst_snapshot"    : self._burst_snapshot(),
             "latency_ms"        : round(self._avg_fetch_ms, 1),
             "loss_pause_active" : time.time() < self._loss_pause_until,
-            "engine_version"    : "v5.0-true-hft",
-            "strategy"          : "ws_burst+pullback+accel+spoof|maker+l3+kelly+regime",
+            "engine_version"    : "v6.0-profitable",
+            "strategy"          : "ws_burst+pullback+accel | trailing+be+smart_timeout | fee_aware",
             "ws_feed"           : self._ws_feed.to_dict() if self._ws_feed else {"ws_available": HAS_WS, "active": False},
-            # ── v5.0 NEW ──────────────────────────────────────────
+            # ── v5.0 ──────────────────────────────────────────────
             "maker_engine"      : maker_stats,
             "kelly_sizer"       : kelly_stats,
             "regime_snapshot"   : regime_snap,
@@ -3688,7 +3854,17 @@ class RapidScalper:
             "l3_books"          : l3_snap,
             "features_active"   : features_active,
             "fee_mode"          : "MAKER" if self.config.maker_mode else "TAKER",
-            "effective_fee_rt"  : round(FEE_RT_MAKER if self.config.maker_mode else FEE_RT, 4),
+            "effective_fee_rt"  : round(fee_rt, 4),
+            # ── v6.0 fee math ─────────────────────────────────────
+            "fee_math"          : {
+                "tp_gross"      : self.config.tp_pct,
+                "sl_gross"      : self.config.sl_pct,
+                "fee_rt_pct"    : round(fee_rt, 4),
+                "net_tp_pct"    : net_tp,
+                "net_sl_pct"    : net_sl,
+                "rr_ratio"      : rr_ratio,
+                "profitable"    : net_tp > 0,
+            },
         }
 
 

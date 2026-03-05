@@ -2427,7 +2427,7 @@ def run_simulation_stream(config: "SimulationConfig"):
             if week_log is None:
                 week_log = {
                     "tag" : "SCREEN",
-                    "text": f"wk{week_num}  candidates={len(candidates)}  open={len(open_positions)}",
+                    "text": f"candidates={len(candidates)}  open={len(open_positions)}",
                 }
             yield sse("tick", {
                 "phase"   : "SIM",
