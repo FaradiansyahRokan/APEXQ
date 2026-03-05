@@ -100,6 +100,25 @@ try:
 except ImportError:
     HAS_ATTR = False
 
+# ── APEX Engine v7.0 Analytics ───────────────────────────────────────────
+try:
+    from apex_engine_v6 import (
+        kalman_filter_trend, kalman_zscore,
+        ou_trading_signals, realized_vol_suite,
+        bayesian_regime_filter, master_quant_signal,
+    )
+    HAS_APEX_V6 = True
+except ImportError:
+    try:
+        from app.engine.apex_engine_v6 import (
+            kalman_filter_trend, kalman_zscore,
+            ou_trading_signals, realized_vol_suite,
+            bayesian_regime_filter, master_quant_signal,
+        )
+        HAS_APEX_V6 = True
+    except ImportError:
+        HAS_APEX_V6 = False
+
 
 # ══════════════════════════════════════════════════════════════════
 #  KONSTANTA & MATH
@@ -992,6 +1011,45 @@ class HFTPredator:
                     "oi_pattern"    : alpha.get("oi",      {}).get("pattern",     "NEUTRAL"),
                     "carry_apy"     : alpha.get("funding", {}).get("apy_pct",     0.0),
                 }
+
+            # ── Gate 7 [v7]: Kalman + OU Enricher (non-blocking) ───────────
+            # Enriches signal with Kalman trend and OU z-score.
+            # Does NOT block entry — only adjusts size up/down.
+            kalman_meta = {}
+            if HAS_APEX_V6:
+                try:
+                    import pandas as pd
+                    prices = ms.price_history()  # returns list of floats
+                    if len(prices) >= 30:
+                        df_k = pd.DataFrame({"Close": prices})
+                        kf = kalman_filter_trend(df_k)
+                        ks = kf.get("signal", "SIDEWAYS")
+                        kt = kf.get("trend_bps_per_tick", 0.0)
+                        ou = ou_trading_signals(df_k, window=min(60, len(prices)))
+                        ou_z = ou.get("ou_zscore", 0.0)
+                        ou_prof = ou.get("profitable", False)
+                        # Kalman agrees with direction = small boost
+                        if direction == "LONG" and ks == "BULLISH":
+                            size_scalar *= 1.1
+                        elif direction == "SHORT" and ks == "BEARISH":
+                            size_scalar *= 1.1
+                        # Kalman strongly disagrees = trim
+                        elif direction == "LONG" and ks == "BEARISH" and kt < -5:
+                            size_scalar *= 0.75
+                        elif direction == "SHORT" and ks == "BULLISH" and kt > 5:
+                            size_scalar *= 0.75
+                        # OU confirms mean reversion opportunity
+                        if ou_prof and direction == "LONG" and ou_z < -1.5:
+                            size_scalar *= 1.05
+                        elif ou_prof and direction == "SHORT" and ou_z > 1.5:
+                            size_scalar *= 1.05
+                        kalman_meta = {
+                            "kalman_signal": ks, "kalman_trend_bps": round(kt, 4),
+                            "ou_zscore": round(ou_z, 4), "ou_profitable": ou_prof,
+                        }
+                except Exception:
+                    pass
+            size_scalar = float(max(min(size_scalar, 2.0), 0.25))  # clamp
 
             capital = self.config.capital_per_trade * max(size_scalar, 0.25)
 

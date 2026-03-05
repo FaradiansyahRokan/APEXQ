@@ -1472,81 +1472,93 @@ export default function DemoTrading() {
             </div>
 
             {/* ── Open Positions ── */}
-            {tab === 'positions' && (() => {
-              const openPos = account.openPositions.filter(p => p.status === 'OPEN');
-              return openPos.length === 0 ? (
-                <div style={{ padding: '36px 0', textAlign: 'center' }}>
-                  <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)' }}>No open positions.</p>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ 
-  display: 'grid', 
-  // 1. Ubah gridTemplateColumns di sini (Perbesar kolom ke-6 jadi 160px)
-  gridTemplateColumns: '80px 60px 100px 100px 110px 160px 100px 1fr', 
-  padding: '8px 16px', 
-  borderBottom: '1px solid var(--border)', 
-  gap: 8 // Sedikit renggangkan gap dari 4 ke 8 biar lebih lega
-}}>
-  {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
-    <span key={h} style={{ 
-      fontFamily: 'var(--mono)', 
-      fontSize: 10, 
-      color: 'var(--ink4)', 
-      letterSpacing: '0.10em', 
-      textTransform: 'uppercase',
-      whiteSpace: 'nowrap' // 2. Tambahkan ini agar teks header/value tidak turun ke bawah
-    }}>
-      {h}
-    </span>
-  ))}
-</div>
-                  {openPos.map(pos => {
-                    const liveP  = livePrices[pos.ticker];
-                    const unrPnl = getUnrealizedPnl(pos);
-                    const unrPct = pos.positionValue ? (unrPnl / pos.positionValue) * 100 : 0;
-                    return (
-                      <div key={pos.id} style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 100px 110px 80px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center', gap: 4, background: unrPnl > 0 ? '#16a34a04' : unrPnl < 0 ? '#dc262604' : 'transparent' }}>
-                        <div>
-                          <p style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{pos.ticker}</p>
-                          {pos.signal !== '—' && <span className={`badge ${pos.signal === 'BULLISH' ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 9 }}>{pos.signal}</span>}
-                        </div>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: pos.direction === 'LONG' ? 'var(--pos)' : 'var(--neg)' }}>{pos.direction}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)' }}>{fmt(pos.entryPrice, pos.entryPrice < 10 ? 4 : 2)}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)', fontWeight: liveP ? 600 : 400 }}>
-                          {liveP ? fmt(liveP, liveP < 10 ? 4 : 2) : '—'}
-                        </span>
-                        <div>
-                          <p style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: unrPnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>
-                            {liveP ? fmtUSD(unrPnl) : '—'}
-                          </p>
-                          {liveP && <p style={{ fontFamily: 'var(--mono)', fontSize: 8, color: unrPnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>{fmtPct(unrPct)}</p>}
-                        </div>
-                        <div>
-                          <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)', fontWeight: 600 }}>
-                            {pos.shares >= 1 ? fmt(pos.shares, 2) : fmt(pos.shares, 5)} {pos.ticker.split('.')[0].split('-')[0]}
-                          </p>
-                          <p style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink4)' }}>${fmt(pos.positionValue)} pos</p>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--neg)' }}>
-                            {pos.stopLoss ? `SL ${fmt(pos.stopLoss, pos.stopLoss < 10 ? 4 : 2)}` : ' No SL'}
-                          </span>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--pos)' }}>
-                            {pos.takeProfit ? `TP ${fmt(pos.takeProfit, pos.takeProfit < 10 ? 4 : 2)}` : ' No TP'}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => setCloseMeta({ posId: pos.id, exitPrice: String(liveP ?? pos.entryPrice) })}
-                          style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.10em', color: 'var(--ink3)', cursor: 'pointer' }}>
-                          Close
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+{tab === 'positions' && (() => {
+  const openPos = account.openPositions.filter(p => p.status === 'OPEN');
+  return openPos.length === 0 ? (
+    <div style={{ padding: '36px 0', textAlign: 'center' }}>
+      <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)' }}>No open positions.</p>
+    </div>
+  ) : (
+    <div>
+      {/* HEADER */}
+      <div style={{ 
+        display: 'grid', 
+        // 1. Ukuran grid kolom disamakan
+        gridTemplateColumns: '80px 60px 100px 100px 110px 160px 100px 1fr', 
+        padding: '8px 16px', 
+        borderBottom: '1px solid var(--border)', 
+        gap: 8 // Gap 8
+      }}>
+        {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
+          <span key={h} style={{ 
+            fontFamily: 'var(--mono)', 
+            fontSize: 10, 
+            color: 'var(--ink4)', 
+            letterSpacing: '0.10em', 
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap'
+          }}>
+            {h}
+          </span>
+        ))}
+      </div>
+
+      {/* DATA ROWS */}
+      {openPos.map(pos => {
+        const liveP  = livePrices[pos.ticker];
+        const unrPnl = getUnrealizedPnl(pos);
+        const unrPct = pos.positionValue ? (unrPnl / pos.positionValue) * 100 : 0;
+        return (
+          <div key={pos.id} style={{ 
+            display: 'grid', 
+            // 2. PAstikan gridTemplateColumns persis dengan header
+            gridTemplateColumns: '80px 60px 100px 100px 110px 160px 100px 1fr', 
+            padding: '12px 16px', 
+            borderBottom: '1px solid var(--border)', 
+            alignItems: 'center', 
+            gap: 8, // 3. Samakan gap dengan header (dari 4 jadi 8) agar tidak geser
+            background: unrPnl > 0 ? '#16a34a04' : unrPnl < 0 ? '#dc262604' : 'transparent' 
+          }}>
+            <div>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{pos.ticker}</p>
+              {pos.signal !== '—' && <span className={`badge ${pos.signal === 'BULLISH' ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 9 }}>{pos.signal}</span>}
+            </div>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: pos.direction === 'LONG' ? 'var(--pos)' : 'var(--neg)' }}>{pos.direction}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)' }}>{fmt(pos.entryPrice, pos.entryPrice < 10 ? 4 : 2)}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)', fontWeight: liveP ? 600 : 400 }}>
+              {liveP ? fmt(liveP, liveP < 10 ? 4 : 2) : '—'}
+            </span>
+            <div>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: unrPnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>
+                {liveP ? fmtUSD(unrPnl) : '—'}
+              </p>
+              {liveP && <p style={{ fontFamily: 'var(--mono)', fontSize: 8, color: unrPnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>{fmtPct(unrPct)}</p>}
+            </div>
+            <div>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)', fontWeight: 600 }}>
+                {pos.shares >= 1 ? fmt(pos.shares, 2) : fmt(pos.shares, 5)} {pos.ticker.split('.')[0].split('-')[0]}
+              </p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink4)' }}>${fmt(pos.positionValue)} pos</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--neg)' }}>
+                {pos.stopLoss ? `SL ${fmt(pos.stopLoss, pos.stopLoss < 10 ? 4 : 2)}` : ' No SL'}
+              </span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--pos)' }}>
+                {pos.takeProfit ? `TP ${fmt(pos.takeProfit, pos.takeProfit < 10 ? 4 : 2)}` : ' No TP'}
+              </span>
+            </div>
+            <button
+              onClick={() => setCloseMeta({ posId: pos.id, exitPrice: String(liveP ?? pos.entryPrice) })}
+              style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.10em', color: 'var(--ink3)', cursor: 'pointer' }}>
+              Close
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+})()}
 
             {/* ── Pending Limit Orders ── */}
             {tab === 'pending' && (() => {

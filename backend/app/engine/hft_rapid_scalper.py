@@ -124,6 +124,31 @@ except ImportError:
     except ImportError:
         HAS_APEX_ENGINES = False
 
+# ── APEX Engine v7.0 Analytics (Kalman / OU / Realized Vol / Bayesian) ────────
+try:
+    from .apex_engine_v6 import (
+        kalman_filter_trend, kalman_zscore,
+        ou_trading_signals,
+        realized_vol_suite,
+        bayesian_regime_filter,
+        master_quant_signal,
+        hawkes_microstructure_signal,
+    )
+    HAS_APEX_V6 = True
+except ImportError:
+    try:
+        from apex_engine_v6 import (
+            kalman_filter_trend, kalman_zscore,
+            ou_trading_signals,
+            realized_vol_suite,
+            bayesian_regime_filter,
+            master_quant_signal,
+            hawkes_microstructure_signal,
+        )
+        HAS_APEX_V6 = True
+    except ImportError:
+        HAS_APEX_V6 = False
+
 # ── Numba JIT untuk hot-path komputasi (FIX 3) ───────────────────────────────
 # Numba mengkompilasi fungsi Python ke native machine code TANPA GIL.
 # Pertama kali dijalankan: ~1–2 detik (JIT compile). Setelah itu: nanoseconds.
@@ -3189,24 +3214,60 @@ class RapidScalper:
                 return False
 
         # ── Gate 3: SignalIntelligenceGate (Kyle's Lambda / toxic flow) ─
+        # JACKAL: Intel gate is advisory — only blocks on extreme toxic flow
         if self._intel_gate is not None:
             try:
                 intel_result = self._intel_gate.evaluate_entry(coin, direction=direction)
                 if not intel_result.approved:
-                    self._log("INTEL_BLOCK", f"{coin}[{direction}]: {intel_result.block_reason}")
-                    return False
-                meta["apex_intel_scalar"] = getattr(intel_result, "final_size_scalar", 1.0)
+                    scalar = getattr(intel_result, "final_size_scalar", 1.0)
+                    # Only block if it's truly severe — otherwise just reduce size
+                    if scalar < 0.3:
+                        self._log("INTEL_BLOCK", f"{coin}[{direction}]: toxic_flow scalar={scalar:.2f}")
+                        return False
+                    meta["apex_intel_scalar"] = scalar
+                else:
+                    meta["apex_intel_scalar"] = getattr(intel_result, "final_size_scalar", 1.0)
             except Exception:
                 pass
 
-        # ── Gate 4: AlphaSignalEngine (funding rate + OI) ────────
+        # ── Gate 4: AlphaSignalEngine (funding rate + OI) — ADVISORY ─
+        # Jackal momentum-first: Alpha gate only reduces size, never fully blocks
         if self._alpha_engine is not None:
             try:
                 alpha_result = self._alpha_engine.get_alpha(coin, intended_dir=direction)
                 if alpha_result.get("skip", False):
-                    self._log("ALPHA_SKIP", f"{coin}: {alpha_result.get('skip_reason')}")
-                    return False
+                    # Only skip if funding rate is extreme (>0.3% per 8h)
+                    skip_reason = alpha_result.get("skip_reason", "")
+                    if "extreme" in str(skip_reason).lower() or "liquidation" in str(skip_reason).lower():
+                        self._log("ALPHA_SKIP", f"{coin}: {skip_reason}")
+                        return False
                 meta["apex_alpha_scalar"] = float(alpha_result.get("size_scalar", 1.0))
+            except Exception:
+                pass
+
+        # ── Gate 5: APEX v6 Kalman + Bayesian Regime Enricher (non-blocking) ─
+        # Enriches meta with v6 signal data. Doesn't block — only adjusts size scalar.
+        if HAS_APEX_V6:
+            try:
+                burst = self._burst.get(coin)
+                if burst and len(burst.ticks) >= 30:
+                    # Build mini price series from recent ticks
+                    import pandas as pd
+                    prices = [t.mid for t in burst.ticks[-60:] if t.mid > 0]
+                    if len(prices) >= 30:
+                        df_mini = pd.DataFrame({"Close": prices})
+                        kf = kalman_filter_trend(df_mini)
+                        kf_signal = kf.get("signal", "SIDEWAYS")
+                        kf_trend_bps = kf.get("trend_bps_per_tick", 0.0)
+                        meta["kalman_signal"] = kf_signal
+                        meta["kalman_trend_bps"] = kf_trend_bps
+                        # If Kalman strongly disagrees with direction, slightly reduce size
+                        if direction == "LONG" and kf_signal == "BEARISH" and kf_trend_bps < -5:
+                            meta["apex_kalman_scalar"] = 0.7
+                        elif direction == "SHORT" and kf_signal == "BULLISH" and kf_trend_bps > 5:
+                            meta["apex_kalman_scalar"] = 0.7
+                        else:
+                            meta["apex_kalman_scalar"] = 1.0
             except Exception:
                 pass
 
