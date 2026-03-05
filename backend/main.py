@@ -777,7 +777,7 @@ app.add_middleware(
         "https://apexq-m5hjixdfc-faradiansyahrokans-projects.vercel.app",
         "https://apexq.vercel.app"
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://(.*\.vercel\.app|.*\.trycloudflare\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

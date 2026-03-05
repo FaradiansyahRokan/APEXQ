@@ -59,6 +59,7 @@ const ENGINES = {
       max_daily_dd_pct   : 3.0,
       lock_step_pct      : 0.50,
       lock_ratio         : 0.60,
+      max_spread_pct     : 0.08,
     },
   },
 };
@@ -385,7 +386,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
 
   const closeAll  = async () => axios.post(`${API}${eng.apiBase}/close-all`);
   const closeOne  = async (id) => axios.post(`${API}${eng.apiBase}/close/${id}`);
-  const resetCB   = async () => axios.post(`${API}${eng.apiBase}/reset-cb`);
+  const resetCB   = async () => axios.post(`${API}${eng.apiBase}/${engineMode === 'jackal' ? 'vault-resume' : 'reset-cb'}`);
 
   // Jackal-only: vault resume
   const vaultResume = async () => {
@@ -887,8 +888,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
             ) : (
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 10 }}>
                 {burst.map(b => {
-                  const up     = b.streak_up >= jackCfg.min_streak;
-                  const dn     = b.streak_dn >= jackCfg.min_streak;
+                  const up     = b.up_streak >= jackCfg.min_streak;
+                  const dn     = b.down_streak >= jackCfg.min_streak;
                   const hasSig = up || dn;
                   const inPos  = b.in_position;
                   const streakColor = up ? 'var(--pos)' : dn ? 'var(--neg)' : 'var(--ink3)';
@@ -919,14 +920,14 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↑ Streak</div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
                             color: up ? 'var(--pos)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
-                            {b.streak_up ?? 0}</div>
+                            {b.up_streak ?? 0}</div>
                         </div>
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↓ Streak</div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
                             color: dn ? 'var(--neg)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
-                            {b.streak_dn ?? 0}</div>
+                            {b.down_streak ?? 0}</div>
                         </div>
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
@@ -940,8 +941,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <div style={{ display:'flex', gap: 3 }}>
                           {Array.from({ length: Math.max(jackCfg.min_streak + 2, 5) }).map((_, i) => (
                             <div key={i} style={{ flex: 1, height: 5, borderRadius: 2,
-                              background: i < (b.streak_up || 0) ? 'var(--pos)'
-                                : i < (b.streak_dn || 0) ? 'var(--neg)' : 'var(--surface3)',
+                              background: i < (b.up_streak || 0) ? 'var(--pos)'
+                                : i < (b.down_streak || 0) ? 'var(--neg)' : 'var(--surface3)',
                               transition:'background .2s' }}/>
                           ))}
                         </div>
@@ -953,7 +954,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       </div>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
-                        {b.spread_ok !== false
+                        {(b.spread_pct ?? 0) < (jackCfg.max_spread_pct ?? 0.08)
                           ? <span className="badge badge-muted" style={{ fontSize: 8 }}>OK ✓</span>
                           : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>}
                       </div>
@@ -1122,12 +1123,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 {/* Vault stats grid */}
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 10 }}>
                   {[
-                    { label:'Starting Balance', value:`$${fmt(vault.initial_balance)}` },
-                    { label:'Current Equity',   value:`$${fmt(vault.current_equity)}`, color: clr(vault.current_equity - vault.initial_balance) },
-                    { label:'Dynamic Floor',    value:`$${fmt(vault.dynamic_floor)}`,   color:'var(--amber)' },
-                    { label:'Gains Locked',     value:`$${fmt(vault.locked_gains ?? 0)}`, color:'var(--pos)' },
-                    { label:'Gains %',          value:`${fmtPct(vault.gains_pct ?? 0)}`, color: clr(vault.gains_pct ?? 0) },
-                    { label:'DD from Peak',     value:`${fmt(vault.dd_from_peak_pct ?? 0, 2)}%`, color: (vault.dd_from_peak_pct??0)>2?'var(--neg)':'var(--ink3)' },
+                    { label:'Starting Balance', value:`$${fmt(vault.initial)}` },
+                    { label:'Peak Equity',      value:`$${fmt(vault.peak)}`,   color: clr(vault.peak - vault.initial) },
+                    { label:'Floor (Protected)',value:`$${fmt(vault.floor)}`,   color:'var(--amber)' },
+                    { label:'Locked Gains',     value:`$${fmt(Math.max(0, vault.floor - vault.initial))}`, color:'var(--pos)' },
+                    { label:'Peak Gain %',      value:`${fmtPct(vault.peak_pct ?? 0)}`, color: clr(vault.peak_pct ?? 0) },
+                    { label:'Floor Lock %',     value:`${fmt(vault.floor_pct ?? 0, 2)}%`, color: (vault.floor_pct??0)>0?'var(--pos)':'var(--ink3)' },
                   ].map(({ label, value, color }) => (
                     <div key={label} style={{ background:'var(--surface2)', border:'1px solid var(--border)',
                       borderRadius:'var(--radius-sm)', padding:'12px 14px' }}>
@@ -1151,19 +1152,17 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <div style={{
                           height:'100%', borderRadius: 4,
                           background: 'linear-gradient(90deg, var(--amber), var(--pos))',
-                          width:`${Math.min(100, Math.max(0,
-                            ((vault.current_equity - vault.initial_balance) / Math.max(vault.initial_balance, 1)) * 100 / 10
-                          ) * 10)}%`,
+                          width:`${Math.min(100, Math.max(0, vault.peak_pct ?? 0) * 10)}%`,
                           transition:'width .5s ease',
                         }}/>
                       </div>
                       <div style={{ display:'flex', justifyContent:'space-between', marginTop: 6 }}>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink4)' }}>
-                          Start ${fmt(vault.initial_balance)}</span>
+                          Start ${fmt(vault.initial)}</span>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--amber)' }}>
-                          Floor ${fmt(vault.dynamic_floor)}</span>
+                          Floor ${fmt(vault.floor)}</span>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--pos)' }}>
-                          Now ${fmt(vault.current_equity)}</span>
+                          Peak ${fmt(vault.peak)}</span>
                       </div>
                     </div>
                   </div>
