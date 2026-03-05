@@ -78,7 +78,7 @@ const ScaleBar = ({ value = 1, color = 'var(--pos)' }) => (
 // ─── Quant metric row ─────────────────────────────────────────────
 const QRow = ({ label, value, color, badge }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-    <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+    <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {badge && <span className={`badge ${badge}`} style={{ fontSize: 6, padding: '1px 5px' }}>{value}</span>}
       {!badge && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: color || 'var(--ink2)' }}>{value}</span>}
@@ -943,7 +943,7 @@ export default function DemoTrading() {
           <p style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.14em', color: 'var(--ink3)', marginBottom: 34, textTransform: 'uppercase' }}>Paper Account · Risk-Free Simulation</p>
 
           <div style={{ marginBottom: 24, textAlign: 'left' }}>
-            <p style={{ fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink4)', marginBottom: 10 }}>Virtual Deposit</p>
+            <p style={{ fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink4)', marginBottom: 10 }}>Virtual Deposit</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
               {[10000, 25000, 50000, 100000].map(amt => (
                 <button key={amt} onClick={() => setDeposit(amt)} style={{ padding: '11px 0', background: deposit === amt ? 'var(--accent)' : 'var(--surface2)', border: `1px solid ${deposit === amt ? 'transparent' : 'var(--border)'}`, borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: deposit === amt ? '#fff' : 'var(--ink2)' }}>
@@ -1006,7 +1006,7 @@ export default function DemoTrading() {
             Demo Mode · {account.sessionId.slice(5, 13)} · Polling {account.openPositions.length > 0 ? '🟢' : ''}
           </span>
         </div>
-        <button onClick={resetAccount} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 13px', fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: 'pointer' }}>
+        <button onClick={resetAccount} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 13px', fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: 'pointer' }}>
           ↺ Reset
         </button>
       </div>
@@ -1023,7 +1023,7 @@ export default function DemoTrading() {
           { label: 'Armor Mode',    value: armorMode,                                   color: modeColor },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ background: 'var(--surface)', padding: '14px 16px' }}>
-            <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</p>
+            <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</p>
             <p style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color, letterSpacing: '-0.01em' }}>{value}</p>
           </div>
         ))}
@@ -1237,10 +1237,10 @@ export default function DemoTrading() {
                   {(chartData || chartLoading) && (
                     <div style={{ marginBottom: 14 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>
                           {sigTicker || form.ticker} · Price Chart
                         </span>
-                        <button onClick={() => setShowChart(v => !v)} style={{ background: 'none', border: 'none', fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', cursor: 'pointer', letterSpacing: '0.08em' }}>
+                        <button onClick={() => setShowChart(v => !v)} style={{ background: 'none', border: 'none', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', cursor: 'pointer', letterSpacing: '0.08em' }}>
                           {showChart ? '▲ collapse' : '▼ expand'}
                         </button>
                       </div>
@@ -1281,7 +1281,7 @@ export default function DemoTrading() {
 
                     {/* Quant Metrics ──────────────────────── */}
                     <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
-                      <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Quant Metrics</p>
+                      <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Quant Metrics</p>
                       <QRow label="Volatility (Ann.)" value={q.volatility != null ? `${fmt(q.volatility, 2)}%` : '—'} />
                       <QRow label="Sortino Ratio"     value={q.sortino != null ? fmt(q.sortino, 3) : '—'} color={q.sortino > 1 ? 'var(--pos)' : q.sortino < 0 ? 'var(--neg)' : 'var(--ink2)'} />
                       <QRow label="Calmar Ratio"      value={q.calmar_ratio != null ? fmt(q.calmar_ratio, 3) : '—'} color={q.calmar_ratio > 0.5 ? 'var(--pos)' : 'var(--ink2)'} />
@@ -1293,7 +1293,7 @@ export default function DemoTrading() {
                     {/* Risk Metrics + Trade Setup ─────────── */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', flex: 1 }}>
-                        <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Risk Metrics</p>
+                        <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Risk Metrics</p>
                         <QRow label="VaR 95% (Hist.)" value={q.var_95_hist_pct != null ? `${fmt(q.var_95_hist_pct, 3)}%` : '—'} color="var(--neg)" />
                         <QRow label="CVaR 95% (Hist.)" value={q.cvar_95_hist_pct != null ? `${fmt(q.cvar_95_hist_pct, 3)}%` : '—'} color="var(--neg)" />
                         <QRow label="VaR 95% (CF)"    value={q.var_95_cf_pct != null ? `${fmt(q.var_95_cf_pct, 3)}%` : '—'} color="var(--neg)" />
@@ -1324,7 +1324,7 @@ export default function DemoTrading() {
                     <div style={{ background: tradeSetup.tradeGate === 'OPEN' ? '#16a34a0c' : '#dc262608', border: `1px solid ${tradeSetup.tradeGate === 'OPEN' ? 'var(--pos-b)' : 'var(--neg-b)'}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Apex Setup Recommendation</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Apex Setup Recommendation</span>
                           <span className={`badge ${tradeSetup.confidence === 'HIGH' ? 'badge-green' : tradeSetup.confidence === 'MEDIUM' ? 'badge-amber' : 'badge-red'}`} style={{ fontSize: 6 }}>
                             {tradeSetup.confidence} CONF
                           </span>
@@ -1348,10 +1348,10 @@ export default function DemoTrading() {
                         ))}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink3)' }}>
                           R:R = 1 : {tradeSetup.rrRatio} · Daily σ = {fmt(tradeSetup.dailyMove, tradeSetup.dailyMove < 1 ? 4 : 2)}
                         </span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)' }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink3)' }}>
                           SL/TP auto-filled ↓
                         </span>
                       </div>
@@ -1362,7 +1362,7 @@ export default function DemoTrading() {
                   {riskRec ? (
                     <div style={{ background: 'var(--surface)', borderRadius: 8, padding: '10px 14px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 4 }}>Armor Risk Recommendation</p>
+                        <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 4 }}>Armor Risk Recommendation</p>
                         <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)' }}>Kelly-adjusted · Risk scale {fmt(riskScale * 100, 0)}%</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -1381,7 +1381,7 @@ export default function DemoTrading() {
 
             {/* ── TRADE ENTRY FORM ─────────────────────────────── */}
             <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginTop: 4 }}>
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>New Order</p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>New Order</p>
 
               {/* Row 1: Ticker / Direction / Order Type */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
@@ -1418,7 +1418,7 @@ export default function DemoTrading() {
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                           {form.entryPrice ? `≈ ${fmt(Number(form.entryPrice), Number(form.entryPrice) < 10 ? 4 : 2)}` : 'Fetched at submit'}
                         </span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--accent)' }}>LIVE ●</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--accent)' }}>LIVE ●</span>
                       </div>
                       <p style={{ fontFamily: 'var(--mono)', fontSize: 6, color: 'var(--ink4)', marginTop: 3 }}>Harga final = live price saat submit</p>
                     </>
@@ -1482,7 +1482,7 @@ export default function DemoTrading() {
                 <div>
                   <div style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 100px 110px 80px 1fr', padding: '8px 16px', borderBottom: '1px solid var(--border)', gap: 4 }}>
                     {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
-                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
+                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
                     ))}
                   </div>
                   {openPos.map(pos => {
@@ -1522,7 +1522,7 @@ export default function DemoTrading() {
                         </div>
                         <button
                           onClick={() => setCloseMeta({ posId: pos.id, exitPrice: String(liveP ?? pos.entryPrice) })}
-                          style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.10em', color: 'var(--ink3)', cursor: 'pointer' }}>
+                          style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.10em', color: 'var(--ink3)', cursor: 'pointer' }}>
                           Close
                         </button>
                       </div>
@@ -1543,7 +1543,7 @@ export default function DemoTrading() {
                 <div>
                   <div style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 90px 1fr', padding: '8px 16px', borderBottom: '1px solid var(--border)', gap: 4 }}>
                     {['Ticker','Dir','Limit Price','Current Price','Status',''].map(h => (
-                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
+                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
                     ))}
                   </div>
                   {pending.map(pos => {
@@ -1557,11 +1557,11 @@ export default function DemoTrading() {
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)' }}>{liveP ? fmt(liveP, liveP < 10 ? 4 : 2) : '—'}</span>
                         <div>
                           <span className="badge badge-amber" style={{ fontSize: 6 }}>PENDING</span>
-                          {dist != null && <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', marginTop: 2 }}>{fmt(dist, 2)}% away</p>}
+                          {dist != null && <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', marginTop: 2 }}>{fmt(dist, 2)}% away</p>}
                         </div>
                         <button
                           onClick={() => { const updated = { ...account, openPositions: account.openPositions.filter(p => p.id !== pos.id) }; saveAccount(updated); }}
-                          style={{ background: 'var(--surface2)', border: '1px solid var(--neg-b)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--neg)', cursor: 'pointer' }}>
+                          style={{ background: 'var(--surface2)', border: '1px solid var(--neg-b)', borderRadius: 5, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--neg)', cursor: 'pointer' }}>
                           Cancel
                         </button>
                       </div>
@@ -1581,7 +1581,7 @@ export default function DemoTrading() {
                 <div>
                   <div style={{ display: 'grid', gridTemplateColumns: '78px 54px 88px 88px 100px 76px 72px 72px', padding: '8px 16px', borderBottom: '1px solid var(--border)', gap: 4 }}>
                     {['Ticker','Dir','Entry','Exit','P&L $','P&L %','Result','Reason'].map(h => (
-                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
+                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
                     ))}
                   </div>
                   {account.closedTrades.map(t => (
@@ -1592,8 +1592,8 @@ export default function DemoTrading() {
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)' }}>{fmt(t.exitPrice, 4)}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: t.pnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>{fmtUSD(t.pnl)}</span>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: t.pnl >= 0 ? 'var(--pos)' : 'var(--neg)' }}>{fmtPct(t.pnlPct)}</span>
-                      <span className={`badge ${t.isWin ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 7 }}>{t.isWin ? 'WIN' : 'LOSS'}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>{t.closeReason ?? 'MANUAL'}</span>
+                      <span className={`badge ${t.isWin ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 13 }}>{t.isWin ? 'WIN' : 'LOSS'}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>{t.closeReason ?? 'MANUAL'}</span>
                     </div>
                   ))}
                 </div>
@@ -1613,8 +1613,8 @@ export default function DemoTrading() {
             </div>
             <EquityCurve data={account.equityCurve} w={280} h={68} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>Init: ${fmt(account.initialBalance)}</span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>Now: ${fmt(account.currentBalance)}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>Init: ${fmt(account.initialBalance)}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>Now: ${fmt(account.currentBalance)}</span>
             </div>
           </div>
 
@@ -1623,13 +1623,13 @@ export default function DemoTrading() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}> Equity Armor</span>
               {armorBusy
-                ? <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>updating…</span>
+                ? <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>updating…</span>
                 : <span className={`badge ${armorMode === 'FULL' || armorMode === 'ACTIVE' ? 'badge-green' : armorMode === 'REDUCED' ? 'badge-amber' : 'badge-red'}`}>{armorMode}</span>
               }
             </div>
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>Risk Scale</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>Risk Scale</span>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: modeColor }}>{fmt(riskScale * 100, 0)}%</span>
               </div>
               <ScaleBar value={riskScale} color={modeColor} />
@@ -1643,15 +1643,15 @@ export default function DemoTrading() {
               ['Edge',         armor?.edge_monitor?.status ?? (account.armorReady ? 'NORMAL' : 'OFFLINE')],
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 30, fontWeight: 500, color: 'var(--ink2)' }}>{value}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500, color: 'var(--ink2)' }}>{value}</span>
               </div>
             ))}
-            <button onClick={() => refreshArmor(account)} disabled={armorBusy} style={{ width: '100%', marginTop: 12, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: armorBusy ? 'default' : 'pointer', opacity: armorBusy ? 0.5 : 1 }}>
+            <button onClick={() => refreshArmor(account)} disabled={armorBusy} style={{ width: '100%', marginTop: 12, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: armorBusy ? 'default' : 'pointer', opacity: armorBusy ? 0.5 : 1 }}>
               {armorBusy ? 'Refreshing…' : '↺ Refresh Armor'}
             </button>
             {!account.armorReady && (
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--neg)', marginTop: 8, textAlign: 'center' }}> Backend offline — armor inactive</p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--neg)', marginTop: 8, textAlign: 'center' }}> Backend offline — armor inactive</p>
             )}
           </div>
 
@@ -1672,7 +1672,7 @@ export default function DemoTrading() {
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13, padding: 18 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Milestone Ladder</span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>floor locks at prev</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>floor locks at prev</span>
             </div>
             {(() => {
               const ladder = milestones?.full_ladder ?? [
@@ -1695,9 +1695,9 @@ export default function DemoTrading() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 9 }}>{m.reached ? '' : isNext ? '→' : '○'}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, color: m.reached ? 'var(--pos)' : isNext ? 'var(--ink)' : 'var(--ink3)' }}>+{m.level_pct}%</span>
-                            {isNext && <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>${fmt(targetBal, 0)}</span>}
+                            {isNext && <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>${fmt(targetBal, 0)}</span>}
                           </div>
-                          <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>floor +{m.floor_pct}%</span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)' }}>floor +{m.floor_pct}%</span>
                         </div>
                       </div>
                     );
@@ -1726,12 +1726,12 @@ export default function DemoTrading() {
               </div>
             )}
             <div style={{ marginBottom: 18 }}>
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', marginBottom: 7, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Exit Price</p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', marginBottom: 7, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Exit Price</p>
               <input autoFocus type="number" value={closeMeta.exitPrice} onChange={e => setCloseMeta(m => ({ ...m, exitPrice: e.target.value }))} onKeyDown={e => e.key === 'Enter' && closePosition()} style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 9, padding: '13px 16px', fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: 'var(--ink)' }} />
             </div>
             <div style={{ background: previewPnl >= 0 ? '#16a34a12' : '#dc262612', border: `1px solid ${previewPnl >= 0 ? 'var(--pos-b)' : 'var(--neg-b)'}`, borderRadius: 11, padding: '16px 18px', marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Estimated P&L</p>
+                <p style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Estimated P&L</p>
                 <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)' }}>{fmt(previewPos.shares, 4)} shares × Δ{fmt(previewExit - (previewPos.entryPrice || previewPos.limitPrice), 4)}</p>
               </div>
               <p style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: previewPnl >= 0 ? 'var(--pos)' : 'var(--neg)', letterSpacing: '-0.03em' }}>{fmtUSD(previewPnl)}</p>
@@ -1751,7 +1751,7 @@ export default function DemoTrading() {
 
 // ─── Shared styles ────────────────────────────────────────────────
 const LBL = {
-  fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)',
+  fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink4)',
   marginBottom: 5, letterSpacing: '0.10em', textTransform: 'uppercase',
 };
 const INPUT = {
