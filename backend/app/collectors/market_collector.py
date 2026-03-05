@@ -42,16 +42,25 @@ def get_ihsg_summary():
         
         if df.empty: return None
 
-        # Ambil harga pembukaan hari ini untuk pembanding warna (Bullish/Bearish)
-        open_price = df['Open'].iloc[0]
         current_price = df['Close'].iloc[-1]
         high_price = df['High'].max()
 
+        # Ambil TRUE open price dari fast_info (harga resmi bursa, bukan open candle pertama)
+        try:
+            open_price = float(asset.fast_info.open)
+        except Exception:
+            open_price = float(df['Open'].iloc[0])  # fallback
+
         # Format history untuk Lightweight Charts Area
         history = [
-            {"time": int(t.timestamp()), "value": float(v)} 
+            {"time": int(t.timestamp()), "value": float(v)}
             for t, v in df['Close'].items()
         ]
+
+        # FIX: Paksa titik pertama chart = harga open, supaya chart
+        # selalu mulai tepat di garis OPEN, tidak loncat ke atas/bawah.
+        if history:
+            history[0]["value"] = open_price
 
         return {
             "current": round(current_price, 2),
