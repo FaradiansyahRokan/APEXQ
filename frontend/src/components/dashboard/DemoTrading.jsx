@@ -159,6 +159,18 @@ export default function DemoTrading() {
   const [liveCandle,    setLiveCandle]    = useState(null);  // realtime candle update
   const chartWsRef = useRef(null);
 
+  // FIX 3: Throttle WS price updates — update state max 1x/detik per coin.
+  // Hyperliquid candle WS bisa kirim update setiap < 1 detik untuk semua coin sekaligus.
+  // Tanpa throttle: setiap candle message → setWatchPrices → re-render seluruh DemoTrading
+  // termasuk HFTBot di dalamnya → UI flickering terus.
+  const watchPriceThrottleRef = useRef({});   // ticker → last update timestamp (ms)
+  const livePriceThrottleRef  = useRef({});   // ticker → last update timestamp (ms)
+  const PRICE_THROTTLE_MS     = 1000;         // update state max sekali per detik per coin
+
+  // FIX 4: Simpan account terbaru di ref untuk diakses oleh WS callbacks (no stale closure)
+  const accountRef = useRef(null);
+  useEffect(() => { accountRef.current = account; }, [account]);
+
   // ═══════════════════════════════════════════════════════════════
   //  PERSISTENCE
   // ═══════════════════════════════════════════════════════════════
@@ -367,6 +379,10 @@ export default function DemoTrading() {
             const msg = JSON.parse(e.data);
             if (msg.channel === 'candle' && msg.data?.c) {
               const price = parseFloat(msg.data.c);
+              // FIX 3: throttle live price updates per coin
+              const now = Date.now();
+              if (now - (livePriceThrottleRef.current[tk] || 0) < PRICE_THROTTLE_MS) return;
+              livePriceThrottleRef.current[tk] = now;
               setLivePrices(prev => ({ ...prev, [tk]: price }));
             }
           } catch {}
@@ -440,6 +456,11 @@ export default function DemoTrading() {
             if (msg.channel === 'candle' && msg.data?.c) {
               const price = parseFloat(msg.data.c);
               const open  = parseFloat(msg.data.o);
+              // FIX 3: throttle — skip jika coin ini sudah diupdate dalam 1 detik terakhir
+              const now = Date.now();
+              if (now - (watchPriceThrottleRef.current[tk] || 0) < PRICE_THROTTLE_MS) return;
+              watchPriceThrottleRef.current[tk] = now;
+
               setWatchPrices(prev => {
                 const existing = prev[tk] || {};
                 const chgPct = open > 0 ? ((price - open) / open) * 100 : 0;
@@ -558,20 +579,24 @@ export default function DemoTrading() {
     if (!hasAnyOpen) return;
 
     const run = async () => {
+      // FIX 4: pakai accountRef.current agar selalu dapat versi terbaru, bukan stale closure
+      const currentAcc = accountRef.current;
+      if (!currentAcc) return;
+
       // For non-crypto: polling via apex endpoint
       const nonCryptoTickers = [...new Set(
-        account.openPositions
+        currentAcc.openPositions
           .filter(p => !isCrypto(p.ticker))
           .map(p => p.ticker)
       )];
       if (nonCryptoTickers.length) {
-        const prices = await fetchLivePrices(account.openPositions.filter(p => !isCrypto(p.ticker)));
+        const prices = await fetchLivePrices(currentAcc.openPositions.filter(p => !isCrypto(p.ticker)));
         if (prices) {
           setLivePrices(prev => {
             const merged = { ...prev, ...prices };
             // Check SL/TP/Limit triggers
-            const updatedAcc = checkAutoExecutions(account, merged);
-            if (updatedAcc !== account) saveAccount(updatedAcc);
+            const updatedAcc = checkAutoExecutions(currentAcc, merged);
+            if (updatedAcc !== currentAcc) saveAccount(updatedAcc);
             return merged;
           });
         }
@@ -585,15 +610,18 @@ export default function DemoTrading() {
   // Auto-execute check when live prices update (crypto via WS)
   const prevLivePricesRef = useRef({});
   useEffect(() => {
-    if (!account) return;
+    // FIX 4: gunakan accountRef.current bukan account dari closure
+    // Tanpa ini: saat account diupdate (saveAccount), effect ini masih pakai versi lama account
+    const acc = accountRef.current;
+    if (!acc) return;
     const changed = Object.keys(livePrices).some(
       tk => livePrices[tk] !== prevLivePricesRef.current[tk]
     );
     if (!changed) return;
     prevLivePricesRef.current = livePrices;
 
-    const updatedAcc = checkAutoExecutions(account, livePrices);
-    if (updatedAcc !== account) saveAccount(updatedAcc);
+    const updatedAcc = checkAutoExecutions(acc, livePrices);
+    if (updatedAcc !== acc) saveAccount(updatedAcc);
   }, [livePrices]); // eslint-disable-line
 
 

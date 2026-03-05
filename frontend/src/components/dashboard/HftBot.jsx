@@ -300,9 +300,15 @@ export default function HFTBot({ initialBalance = 1000 }) {
     ? fn => setPredCfg(c => typeof fn === 'function' ? fn(c) : fn)
     : fn => setJackCfg(c => typeof fn === 'function' ? fn(c) : fn);
 
-  const wsRef     = useRef(null);
-  const prevCount = useRef(0);
-  const prevMode  = useRef(engineMode);
+  const wsRef         = useRef(null);
+  const prevCount     = useRef(0);
+  const prevMode      = useRef(engineMode);
+  // FIX 1: simpan connectWS di ref agar onclose selalu pakai versi terbaru (no stale closure)
+  const connectWsRef  = useRef(null);
+  // FIX 2: track kapan terakhir WS kirim data — skip polling jika WS masih fresh
+  const lastWsMsgTs   = useRef(0);
+  // FIX 3: track trade_log count untuk flash notification
+  const prevStatusRef = useRef(null);
 
   // ─── Reset state when engine switches ─────────────────────────────────────
   useEffect(() => {
@@ -312,51 +318,95 @@ export default function HFTBot({ initialBalance = 1000 }) {
       setRunning(false);
       setTab('positions');
       prevCount.current = 0;
-      // Reconnect WS to new engine
+      prevStatusRef.current = null;
+      lastWsMsgTs.current   = 0;
       wsRef.current?.close();
     }
   }, [engineMode]);
 
+  // ─── Status updater — hanya update state jika data berubah signifikan ─────
+  const applyStatus = useCallback((data) => {
+    if (!data) return;
+    // Bandingkan field penting saja — skip re-render jika hanya timestamp/l3_books berubah
+    const prev = prevStatusRef.current;
+    const isNew = !prev
+      || prev.running        !== data.running
+      || prev.balance        !== data.balance
+      || prev.open_count     !== data.open_count
+      || (prev.trade_log?.length ?? 0) !== (data.trade_log?.length ?? 0)
+      || prev.total_pnl      !== data.total_pnl
+      || prev.loss_pause_active !== data.loss_pause_active
+      || JSON.stringify(prev.vault) !== JSON.stringify(data.vault)
+      || JSON.stringify(prev.open_positions) !== JSON.stringify(data.open_positions)
+      || JSON.stringify(prev.burst_snapshot) !== JSON.stringify(data.burst_snapshot)
+      || JSON.stringify(prev.events?.slice(0,3)) !== JSON.stringify(data.events?.slice(0,3));
+
+    if (!isNew) return;
+    prevStatusRef.current = data;
+
+    // Flash notification untuk trade baru
+    const count = data.trade_log?.length || 0;
+    if (count > prevCount.current && prevCount.current > 0) {
+      const last = data.trade_log[count - 1];
+      if (last) {
+        setFlash({ msg: `${last.coin} closed  ${fmtUSD(last.net_pnl)}`, pos: last.net_pnl >= 0 });
+        setTimeout(() => setFlash(null), 3000);
+      }
+    }
+    prevCount.current = count;
+
+    // Batch kedua setState dalam satu flush agar tidak double re-render
+    setStatus(data);
+    setRunning(data.running);
+  }, []);
+
   // ─── WebSocket ─────────────────────────────────────────────────────────────
-  const connectWS = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    const ws = new WebSocket(`${WS_URL}${eng.wsPath}`);
-    ws.onclose   = () => setTimeout(connectWS, 3000);
-    ws.onerror   = () => ws.close();
-    ws.onmessage = (e) => {
+  // FIX 1: connectWS disimpan di ref, bukan useCallback.
+  // Ini memastikan ws.onclose SELALU memanggil versi terkini, bukan stale closure.
+  useEffect(() => {
+    const wsPath = eng.wsPath;
+
+    const connect = () => {
+      if (wsRef.current?.readyState === WebSocket.OPEN ||
+          wsRef.current?.readyState === WebSocket.CONNECTING) return;
+
       try {
-        const data = JSON.parse(e.data);
-        setStatus(data); setRunning(data.running);
-        const count = data.trade_log?.length || 0;
-        if (count > prevCount.current && prevCount.current > 0) {
-          const last = data.trade_log[count - 1];
-          if (last) {
-            setFlash({ msg:`${last.coin} closed  ${fmtUSD(last.net_pnl)}`, pos: last.net_pnl >= 0 });
-            setTimeout(() => setFlash(null), 3000);
-          }
-        }
-        prevCount.current = count;
+        const ws = new WebSocket(`${WS_URL}${wsPath}`);
+        ws.onopen    = () => { lastWsMsgTs.current = Date.now(); };
+        ws.onerror   = () => ws.close();
+        ws.onclose   = () => {
+          // Pakai ref agar selalu panggil fungsi connect terbaru
+          setTimeout(() => connectWsRef.current?.(), 3000);
+        };
+        ws.onmessage = (e) => {
+          lastWsMsgTs.current = Date.now();
+          try { applyStatus(JSON.parse(e.data)); } catch {}
+        };
+        wsRef.current = ws;
       } catch {}
     };
-    wsRef.current = ws;
-  }, [eng.wsPath]);
 
-  useEffect(() => {
-    wsRef.current?.close();
-    connectWS();
-    return () => wsRef.current?.close();
-  }, [connectWS]);
+    connectWsRef.current = connect;
+    connect();
+    return () => {
+      connectWsRef.current = null;   // prevent reconnect after unmount
+      wsRef.current?.close();
+    };
+  }, [eng.wsPath, applyStatus]);
 
-  // Fallback polling
+  // FIX 2: Fallback polling — hanya aktif jika WS tidak mengirim data dalam 5 detik
+  // Sebelumnya polling SELALU jalan setiap 2 detik, bersamaan dengan WS → double re-render
   useEffect(() => {
     const id = setInterval(async () => {
+      // Skip jika WS masih fresh (< 5 detik sejak pesan terakhir)
+      if (Date.now() - lastWsMsgTs.current < 5000) return;
       try {
         const { data } = await axios.get(`${API}${eng.apiBase}/status`);
-        setStatus(data); setRunning(data.running);
+        applyStatus(data);
       } catch {}
-    }, 2000);
+    }, 3000);
     return () => clearInterval(id);
-  }, [eng.apiBase]);
+  }, [eng.apiBase, applyStatus]);
 
   // ─── Controls ─────────────────────────────────────────────────────────────
   const showFlash = (msg, pos = true) => {
