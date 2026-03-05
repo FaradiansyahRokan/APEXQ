@@ -811,7 +811,18 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 #  HELPERS (tidak berubah dari v3)
 # ══════════════════════════════════════════════════════════════════
 
+def _is_crypto(ticker: str) -> bool:
+    """Deteksi apakah ticker adalah crypto — jangan kirim ke yfinance."""
+    t = ticker.upper().strip()
+    return t.endswith('-USD') or t.endswith('USDT') or t.endswith('-USDT')
+
 def _fetch_df(ticker: str, period: str = "1y") -> Optional[pd.DataFrame]:
+    """Fetch DataFrame. Crypto → pakai _fetch_crypto_df (tidak pernah yfinance)."""
+    if _is_crypto(ticker):
+        # Untuk endpoint yang hanya butuh df (bukan chart_data),
+        # tetap pakai _fetch_crypto_df lalu ambil df-nya saja
+        df, _, _, _ = _fetch_crypto_df(ticker)
+        return df
     df = get_market_data(ticker, period=period)
     if df is not None and isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
@@ -819,10 +830,37 @@ def _fetch_df(ticker: str, period: str = "1y") -> Optional[pd.DataFrame]:
 
 
 def _fetch_crypto_df(ticker: str, tf: str = "1D"):
-    df, chart_data, price, profile = get_hl_crypto_data(ticker, tf)
-    if df is None or df.empty:
+    """
+    Ambil data crypto HANYA dari Hyperliquid → Binance.
+    TIDAK ada fallback ke yfinance — Yahoo Finance 401 untuk crypto.
+    """
+    # 1. Coba Hyperliquid dulu (native L1, paling akurat)
+    try:
+        df, chart_data, price, profile = get_hl_crypto_data(ticker, tf)
+        if df is not None and not df.empty and chart_data:
+            print(f"✅ [CRYPTO] {ticker} → Hyperliquid ({len(chart_data)} candles)")
+            return df, chart_data, price, profile
+    except Exception as e:
+        print(f"⚠️  [CRYPTO] {ticker} → Hyperliquid error: {e}")
+
+    # 2. Fallback ke Binance
+    try:
         df, chart_data, price, profile = get_binance_crypto_data(ticker, tf)
-    return df, chart_data, price, profile
+        if df is not None and not df.empty and chart_data:
+            print(f"✅ [CRYPTO] {ticker} → Binance ({len(chart_data)} candles)")
+            return df, chart_data, price, profile
+    except Exception as e:
+        print(f"⚠️  [CRYPTO] {ticker} → Binance error: {e}")
+
+    # 3. Tidak ada data — return None, JANGAN yfinance
+    print(f"❌ [CRYPTO] {ticker} → No data from Hyperliquid or Binance.")
+    return None, [], 0.0, {
+        "full_name": ticker,
+        "sector": "Web3 & Crypto",
+        "exchange": "N/A",
+        "currency": "USD",
+        "data_source": "UNAVAILABLE",
+    }
 
 
 def _calc_apex_score(quant: Dict, ict: Dict, stats: Dict) -> Dict:
@@ -914,8 +952,9 @@ def market_overview(tf: str):
 
 @app.get("/api/analyze/{ticker}")
 def analyze_asset(ticker: str, tf: str = "1D"):
-    is_crypto = ticker.endswith('-USD') or ticker.endswith('USDT')
+    is_crypto = _is_crypto(ticker)
     if is_crypto:
+        # Crypto → HANYA Hyperliquid atau Binance, tidak pernah yfinance
         df, chart_data, price, profile = _fetch_crypto_df(ticker, tf)
     else:
         profile = get_company_profile(ticker)
@@ -1167,8 +1206,9 @@ def data_spoof(ticker: str):
 @app.get("/api/apex-institutional/{ticker}")
 def apex_institutional(ticker: str, tf: str = "1D", account_size: float = 30_000):
     """🏛️ APEX INSTITUTIONAL INTELLIGENCE — semua engine dalam satu call."""
-    is_crypto = ticker.endswith("-USD") or ticker.endswith("USDT")
+    is_crypto = _is_crypto(ticker)
     if is_crypto:
+        # Crypto → HANYA Hyperliquid atau Binance, tidak pernah yfinance
         df, _, price, profile = _fetch_crypto_df(ticker, tf)
     else:
         profile = get_company_profile(ticker)
