@@ -2231,7 +2231,9 @@ def armor_init(req: ArmorInitRequest):
 def armor_update(req: ArmorUpdateRequest):
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(400, "Armor not initialized. Call /api/armor/init first.")
+        # 503 = service restart / state lost, beda dengan 400 bad request
+        # Frontend bisa deteksi ini dan auto-reinit
+        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
     result = _armor_instance.update(
         current_balance=req.current_balance,
         date=req.date,
@@ -2244,7 +2246,7 @@ def armor_update(req: ArmorUpdateRequest):
 def armor_record(req: ArmorTradeRequest):
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(400, "Armor not initialized.")
+        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
     return sanitize_data(_armor_instance.record_trade(req.pnl_usd, req.is_win, req.date))
 
 
@@ -2260,7 +2262,7 @@ def armor_status():
 def armor_risk_size(req: ArmorRiskRequest):
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(400, "Armor not initialized.")
+        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
     return sanitize_data(_armor_instance.get_position_risk_pct(
         base_risk_pct=req.base_risk_pct,
         win_rate=req.win_rate,
@@ -2303,7 +2305,7 @@ def armor_full_report():
 def armor_milestones():
     global _armor_instance
     if _armor_instance is None:
-        raise HTTPException(400, "Armor not initialized.")
+        raise HTTPException(503, "Armor session lost (server restart). Call /api/armor/init first.")
     ms = _armor_instance.milestone_tracker
     return sanitize_data({
         "active_milestone": ms.active_milestone.description,

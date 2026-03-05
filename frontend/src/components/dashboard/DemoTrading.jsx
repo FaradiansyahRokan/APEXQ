@@ -193,11 +193,48 @@ export default function DemoTrading() {
     if (!acc?.armorReady) return;
     setArmorBusy(true);
     try {
+      // Coba update dulu
       await axios.post(`${API}/api/armor/update`, {
         session_id:      acc.sessionId,
         current_balance: acc.currentBalance,
         date:            today(),
       });
+    } catch (e) {
+      const status = e?.response?.status;
+      // 400 = armor not initialized (backend restart), 404 = route not found
+      // → Auto-reinit armor agar sesi bisa lanjut tanpa user harus reset manual
+      if (status === 400 || status === 404 || status === 503) {
+        console.warn('[Armor] Backend restart detected — re-initializing armor session...');
+        try {
+          await axios.post(`${API}/api/armor/init`, {
+            session_id:          acc.sessionId,
+            initial_balance:     acc.initialBalance,
+            trailing_stop_pct:   0.15,
+            target_vol_ann:      0.12,
+            base_kelly_fraction: 0.25,
+            reserve_rate:        0.15,
+            min_win_rate:        0.45,
+            max_consec_losses:   7,
+          });
+          // Retry update setelah reinit berhasil
+          await axios.post(`${API}/api/armor/update`, {
+            session_id:      acc.sessionId,
+            current_balance: acc.currentBalance,
+            date:            today(),
+          });
+        } catch (reinitErr) {
+          console.warn('[Armor] Re-init also failed:', reinitErr.message);
+          setArmorBusy(false);
+          return; // Gagal total, stop di sini
+        }
+      } else {
+        console.warn('[Armor] Refresh failed:', e.message);
+        setArmorBusy(false);
+        return;
+      }
+    }
+    // Ambil status terbaru setelah update berhasil
+    try {
       const [sRes, mRes] = await Promise.all([
         axios.get(`${API}/api/armor/status?session_id=${acc.sessionId}`),
         axios.get(`${API}/api/armor/milestones?session_id=${acc.sessionId}`),
@@ -205,7 +242,7 @@ export default function DemoTrading() {
       setArmor(sRes.data);
       setMilestones(mRes.data);
     } catch (e) {
-      console.warn('Armor refresh failed:', e.message);
+      console.warn('[Armor] Status fetch failed:', e.message);
     } finally {
       setArmorBusy(false);
     }
@@ -439,16 +476,24 @@ export default function DemoTrading() {
     setTradeSetup(null);
 
     try {
+      // risk-size pakai Promise.resolve fallback kalau armor belum ready atau backend restart
+      const safeRiskSize = account?.armorReady
+        ? axios.post(`${API}/api/armor/risk-size`, {
+            session_id:    account.sessionId,
+            base_risk_pct: 2.0,
+            win_rate:      0.55,
+            rr_ratio:      2.0,
+          }).catch(e => {
+            // 400/404 = backend restart — jangan crash generateSignal
+            // 400/404/503 = backend restart — auto-reinit akan terjadi di refreshArmor
+            console.warn('[Armor] risk-size failed (backend restart?):', e?.response?.status);
+            return { data: null };
+          })
+        : Promise.resolve({ data: null });
+
       const [apexRes, riskRes, analyzeRes] = await Promise.all([
         axios.get(`${API}/api/apex-institutional/${sigTicker.trim()}`),
-        account?.armorReady
-          ? axios.post(`${API}/api/armor/risk-size`, {
-              session_id:    account.sessionId,
-              base_risk_pct: 2.0,
-              win_rate:      0.55,
-              rr_ratio:      2.0,
-            })
-          : Promise.resolve({ data: null }),
+        safeRiskSize,
         axios.get(`${API}/api/analyze/${sigTicker.trim()}`),
       ]);
 
