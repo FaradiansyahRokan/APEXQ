@@ -153,7 +153,9 @@ HL_EXCHANGE_URL= "https://api.hyperliquid.xyz/exchange"
 WS_PING_INTERVAL   = 15.0   # Hyperliquid requires ping every 15s
 WS_RECONNECT_INIT  = 0.5    # initial reconnect delay
 WS_RECONNECT_MAX   = 5.0    # max reconnect delay
-WS_STALE_THRESHOLD = 3.0    # detik sebelum dianggap stale → fallback REST
+WS_STALE_THRESHOLD = 10.0   # detik sebelum dianggap stale (naik dari 3s → 10s)
+                             # allMids di HL kadang update tiap 1-3s, bukan realtime terus
+WS_WARMUP_SECONDS  = 2.5    # tunggu sebelum engine loop mulai (naik dari 0.5s)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -314,19 +316,23 @@ class ScalpPosition:
         return self.hold_seconds >= max_s
 
     def to_dict(self) -> dict:
+        unr_pct = (self.unrealized_pnl / self.capital * 100) if self.capital else 0
         return {
-            "id"           : self.id,
-            "coin"         : self.coin,
-            "direction"    : self.direction,
-            "entry_price"  : round(self.entry_price, 6),
-            "current_price": round(self.current_price, 6),
-            "stop_price"   : round(self.stop_price, 6),
-            "take_profit"  : round(self.tp_price, 6),
-            "qty"          : round(self.qty, 6),
-            "capital"      : round(self.capital, 2),
+            "id"            : self.id,
+            "coin"          : self.coin,
+            "direction"     : self.direction,
+            "entry_price"   : round(self.entry_price, 6),
+            "current_price" : round(self.current_price, 6),
+            "stop_price"    : round(self.stop_price, 6),
+            "take_profit"   : round(self.tp_price, 6),    # Predator kompatibel
+            "tp_price"      : round(self.tp_price, 6),    # Jackal kompatibel: pos.tp_price
+            "qty"           : round(self.qty, 6),
+            "capital"       : round(self.capital, 2),
             "unrealized_pnl": round(self.unrealized_pnl, 4),
-            "hold_seconds" : round(self.hold_seconds, 1),
-            "status"       : self.status,
+            "unrealized_pct": round(unr_pct, 4),          # frontend: pos.unrealized_pct
+            "peak_pnl"      : round(self.peak_pnl, 4),   # frontend: pos.peak_pnl
+            "hold_seconds"  : round(self.hold_seconds, 1),
+            "status"        : self.status,
         }
 
 
@@ -354,21 +360,31 @@ class ScalpTrade:
 
     def to_dict(self) -> dict:
         return {
-            "id"          : self.id,
-            "coin"        : self.coin,
-            "direction"   : self.direction,
-            "entry"       : round(self.entry_price, 6),
-            "exit"        : round(self.exit_price, 6),
-            "capital"     : round(self.capital, 2),
-            "net_pnl"     : round(self.net_pnl, 4),
-            "net_pct"     : round(self.net_pct, 4),
-            "fee"         : round(self.fee_usd, 4),
-            "exit_reason" : self.exit_reason,
-            "hold_s"      : round(self.hold_seconds, 1),
-            "ofi"         : round(self.entry_ofi, 3),
-            "streak"      : self.streak_len,
-            "move_pct"    : round(self.move_pct, 4),
-            "ts"          : self.closed_at,
+            # ── Primary keys (nama yg dipakai frontend HftBot.jsx) ──
+            "id"           : self.id,
+            "coin"         : self.coin,
+            "direction"    : self.direction,
+            "entry_price"  : round(self.entry_price, 6),   # frontend: t.entry_price
+            "exit_price"   : round(self.exit_price, 6),    # frontend: t.exit_price
+            "hold_seconds" : round(self.hold_seconds, 1),  # frontend: t.hold_seconds
+            "closed_at"    : round(self.closed_at, 3),     # frontend: t.closed_at (unix)
+            "opened_at"    : round(self.opened_at, 3),
+            "closed_at_ms" : int(self.closed_at * 1000),   # langsung untuk new Date()
+            "opened_at_ms" : int(self.opened_at * 1000),
+            "capital"      : round(self.capital, 2),
+            "net_pnl"      : round(self.net_pnl, 4),       # frontend: t.net_pnl
+            "net_pct"      : round(self.net_pct, 4),       # frontend: t.net_pct
+            "gross_pnl"    : round(self.gross_pnl, 4),
+            "fee"          : round(self.fee_usd, 4),
+            "exit_reason"  : self.exit_reason,             # frontend: t.exit_reason
+            "ofi"          : round(self.entry_ofi, 3),
+            "streak"       : self.streak_len,
+            "move_pct"     : round(self.move_pct, 4),
+            "ts"           : self.closed_at,               # legacy alias
+            # ── Legacy aliases (nama lama, jaga backward compat) ──
+            "entry"        : round(self.entry_price, 6),
+            "exit"         : round(self.exit_price, 6),
+            "hold_s"       : round(self.hold_seconds, 1),
         }
 
 
@@ -830,9 +846,15 @@ class RapidStats:
         self.max_drawdown        : float = 0.0
         self.consecutive_losses  : int   = 0
         self.max_consec_losses   : int   = 0
-        self.exit_breakdown      : Dict[str, int] = {"TP": 0, "SL": 0, "FLIP": 0, "TIMEOUT": 0, "MANUAL": 0}
-        self.trades_ts           : List[float] = []   # timestamp setiap trade
+        self.exit_breakdown      : Dict[str, int] = {"TP": 0, "SL": 0, "FLIP": 0, "TIMEOUT": 0, "MANUAL": 0, "TRAIL": 0}
+        self.trades_ts           : List[float] = []
         self._start_ts           : float = time.time()
+        # Fields untuk frontend stats panel
+        self.best_trade_pct      : float = 0.0   # best net_pct dari semua trade
+        self.worst_trade_pct     : float = 0.0   # worst net_pct dari semua trade
+        self._pnl_series         : List[float] = []  # untuk Sharpe calculation
+        self.gross_wins          : float = 0.0
+        self.gross_losses        : float = 0.0
 
     def record(self, trade: ScalpTrade, balance: float):
         self.total_trades += 1
@@ -840,17 +862,27 @@ class RapidStats:
         self.total_fees   += trade.fee_usd
         self.net_pnl      += trade.net_pnl
         self.trades_ts.append(trade.closed_at)
+        self._pnl_series.append(trade.net_pct)
         if len(self.trades_ts) > 2000:
-            self.trades_ts = self.trades_ts[-1000:]
+            self.trades_ts   = self.trades_ts[-1000:]
+            self._pnl_series = self._pnl_series[-1000:]
+
+        # Best/worst trade tracking
+        if trade.net_pct > self.best_trade_pct:
+            self.best_trade_pct = trade.net_pct
+        if trade.net_pct < self.worst_trade_pct:
+            self.worst_trade_pct = trade.net_pct
 
         reason = trade.exit_reason
         self.exit_breakdown[reason] = self.exit_breakdown.get(reason, 0) + 1
 
         if trade.net_pnl > 0:
-            self.wins             += 1
+            self.wins              += 1
+            self.gross_wins        += trade.gross_pnl
             self.consecutive_losses = 0
         else:
             self.losses             += 1
+            self.gross_losses       += abs(trade.gross_pnl)
             self.consecutive_losses += 1
             self.max_consec_losses   = max(self.max_consec_losses, self.consecutive_losses)
 
@@ -865,9 +897,18 @@ class RapidStats:
 
     @property
     def profit_factor(self) -> float:
-        wins_sum   = sum(1 for _ in range(self.wins))     # placeholder
-        # Tidak ada per-trade gross easily — approximate dari breakdown
-        return 0.0  # frontend bisa hitung dari trade_log
+        """Gross profit / Gross loss. >1 = profitable."""
+        return round(self.gross_wins / self.gross_losses, 3) if self.gross_losses > 0 else 0.0
+
+    @property
+    def sharpe_trades(self) -> float:
+        """Trade-level Sharpe: avg(net_pct) / std(net_pct)."""
+        if len(self._pnl_series) < 5:
+            return 0.0
+        import statistics
+        avg = statistics.mean(self._pnl_series)
+        std = statistics.stdev(self._pnl_series)
+        return round(avg / std, 3) if std > 0 else 0.0
 
     @property
     def trades_per_minute(self) -> float:
@@ -882,19 +923,34 @@ class RapidStats:
         return self.net_pnl / self.total_trades if self.total_trades else 0.0
 
     def to_dict(self) -> dict:
+        # max_drawdown dalam % dari peak_balance
+        dd_pct = 0.0
+        if self.peak_balance > 0 and self.max_drawdown > 0:
+            dd_pct = round((self.max_drawdown / self.peak_balance) * 100, 3)
+
         return {
+            # ── Keys yang dipakai frontend ───────────────────────────
             "total_trades"      : self.total_trades,
             "wins"              : self.wins,
             "losses"            : self.losses,
             "win_rate"          : round(self.win_rate, 2),
-            "net_pnl"           : round(self.net_pnl, 4),
+            "profit_factor"     : self.profit_factor,              # frontend: st.profit_factor
+            "total_net_pnl"     : round(self.net_pnl, 4),         # frontend: st.total_net_pnl
             "total_fees"        : round(self.total_fees, 4),
             "avg_net_pnl"       : round(self.avg_net_pnl, 5),
+            "best_trade_pct"    : round(self.best_trade_pct, 4),   # frontend: st.best_trade_pct
+            "worst_trade_pct"   : round(self.worst_trade_pct, 4),  # frontend: st.worst_trade_pct
+            "max_drawdown_pct"  : dd_pct,                          # frontend: st.max_drawdown_pct
+            "max_loss_streak"   : self.max_consec_losses,          # frontend: st.max_loss_streak
+            "sharpe_trades"     : self.sharpe_trades,              # frontend: st.sharpe_trades
             "trades_per_minute" : round(self.trades_per_minute, 1),
+            "trades_per_hour"   : round(self.trades_per_minute * 60, 1),  # frontend: st.trades_per_hour
             "consecutive_losses": self.consecutive_losses,
             "max_consec_losses" : self.max_consec_losses,
             "max_drawdown_usd"  : round(self.max_drawdown, 4),
             "exit_breakdown"    : self.exit_breakdown,
+            # ── Legacy alias ─────────────────────────────────────────
+            "net_pnl"           : round(self.net_pnl, 4),
         }
 
 
@@ -986,17 +1042,16 @@ class WSFeedManager:
 
     def snapshot(self, watchlist: List[str]) -> Dict[str, BurstTick]:
         """
-        Ambil snapshot semua tick saat ini dari cache.
-        Tidak ada network call — langsung dari memory.
-        Ini yang membuat WS jauh lebih cepat dari REST poll.
+        Ambil snapshot semua tick dari cache yang masih fresh.
+        Zero network call — murni dari memory.
         """
-        now = time.time()
-        result = {}
-        for coin in watchlist:
-            tick = self.cache.get(coin)
-            if tick and (now - self._cache_ts.get(coin, 0)) < WS_STALE_THRESHOLD:
-                result[coin] = tick
-        return result
+        now    = time.time()
+        cutoff = now - WS_STALE_THRESHOLD
+        return {
+            coin: self.cache[coin]
+            for coin in watchlist
+            if coin in self.cache and self._cache_ts.get(coin, 0) > cutoff
+        }
 
     @property
     def allmids_age_ms(self) -> float:
@@ -1037,9 +1092,10 @@ class WSFeedManager:
             try:
                 async with websockets.connect(
                     HL_WS_URL,
-                    ping_interval=WS_PING_INTERVAL,
-                    ping_timeout=10,
+                    ping_interval=None,      # kita handle ping manual
+                    ping_timeout=None,
                     close_timeout=5,
+                    max_size=2**23,          # 8MB — allMids bisa besar untuk 100+ coin
                 ) as ws:
                     backoff = WS_RECONNECT_INIT  # reset on success
                     # Subscribe allMids
@@ -1048,13 +1104,22 @@ class WSFeedManager:
                         "subscription": {"type": "allMids"}
                     }))
 
+                    last_ping = time.time()
+
                     while self._running:
                         try:
-                            msg = await asyncio.wait_for(ws.recv(), timeout=20.0)
+                            msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
                             self._handle_allmids(msg)
+
+                            # Manual ping setiap WS_PING_INTERVAL detik
+                            if time.time() - last_ping > WS_PING_INTERVAL:
+                                await ws.send(json.dumps({"method": "ping"}))
+                                last_ping = time.time()
+
                         except asyncio.TimeoutError:
-                            # Kirim ping manual jika tidak ada msg > 20s
-                            await ws.ping()
+                            # Tidak ada msg dalam 5 detik — kirim ping
+                            await ws.send(json.dumps({"method": "ping"}))
+                            last_ping = time.time()
 
             except asyncio.CancelledError:
                 break
@@ -1069,39 +1134,72 @@ class WSFeedManager:
         """
         Parse allMids message dan update cache.
 
-        Format pesan dari Hyperliquid:
-        {"channel":"allMids","data":{"mids":{"BTC":"67234.5","ETH":"3521.2",...}}}
+        Hyperliquid WS mengirim beberapa format — kita handle semua:
+
+        Format 1 (paling umum):
+          {"channel":"allMids","data":{"mids":{"BTC":"67234.5",...}}}
+
+        Format 2 (snapshot awal):
+          {"channel":"allMids","data":{"mids":{"BTC":67234.5,...}}}
+          (value float bukan string)
+
+        Format 3 (beberapa versi API):
+          {"channel":"allMids","data":{"BTC":"67234.5",...}}
+          (data langsung dict coin → price, tanpa wrapper "mids")
+
+        Juga handle: subscription confirmation, ping/pong, error messages.
         """
         try:
             msg = json.loads(raw)
-            if msg.get("channel") != "allMids":
+
+            # Skip non-allMids messages (subscription confirm, pong, dll)
+            channel = msg.get("channel", "")
+            if channel != "allMids":
                 return
-            mids = msg.get("data", {}).get("mids", {})
+
+            data = msg.get("data", {})
             now  = time.time()
+
+            # Ekstrak dict coin→price — handle format 1, 2, 3
+            if isinstance(data, dict):
+                # Format 1 & 2: {"mids": {...}}
+                if "mids" in data:
+                    mids_raw = data["mids"]
+                # Format 3: data IS the mids dict langsung
+                elif data and all(isinstance(k, str) for k in list(data.keys())[:3]):
+                    mids_raw = data
+                else:
+                    return
+            else:
+                return
+
+            if not mids_raw:
+                return
+
             self._last_allmids_ts = now
             self.msg_count += 1
 
-            for coin, mid_str in mids.items():
+            for coin, mid_val in mids_raw.items():
                 if coin not in self.watchlist:
                     continue
                 try:
-                    mid = float(mid_str)
+                    mid = float(mid_val)
                 except (ValueError, TypeError):
+                    continue
+                if mid <= 0:
                     continue
 
                 existing = self.cache.get(coin)
                 if existing:
-                    # Update harga, pertahankan bid/ask/size dari orderbook WS
                     existing.price = mid
                     existing.ts    = now
-                    # Jika belum ada orderbook data, estimasi dari mid
-                    if existing.bid <= 0:
-                        slip = 0.010
+                    # Estimasi bid/ask jika belum ada dari orderbook
+                    if existing.bid <= 0 or existing.ask <= 0:
+                        slip = self._get_slip_pct(coin)
                         existing.bid = mid * (1 - slip / 100)
                         existing.ask = mid * (1 + slip / 100)
                 else:
-                    # Buat tick baru dengan estimasi spread
-                    slip = 0.010   # default 0.010% half-spread estimate
+                    slip = self._get_slip_pct(coin)
                     self.cache[coin] = BurstTick(
                         coin   = coin,
                         price  = mid,
@@ -1113,7 +1211,6 @@ class WSFeedManager:
                     )
                 self._cache_ts[coin] = now
 
-                # Trigger callback jika ada (event-driven)
                 if self._on_price_cb:
                     try:
                         self._on_price_cb(coin, self.cache[coin])
@@ -1123,37 +1220,63 @@ class WSFeedManager:
         except Exception:
             pass
 
+    def _get_slip_pct(self, coin: str) -> float:
+        """Estimasi half-spread per coin untuk kalkulasi bid/ask dari mid."""
+        _slip = {
+            "BTC": 0.005, "ETH": 0.006, "SOL": 0.008, "BNB": 0.009,
+            "XRP": 0.010, "DOGE": 0.012, "ADA": 0.012, "AVAX": 0.012,
+        }
+        return _slip.get(coin, 0.015)
+
     # ─── WS CONNECTION 2: l2Book (Orderbook) ─────────────────────
 
     async def _orderbook_loop(self):
         """
         WebSocket loop untuk l2Book stream.
         Subscribe ke hot coins untuk data bid/ask/OFI real-time.
+
+        Catatan subscribe format Hyperliquid:
+          ✓ {"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC"}}
+          ✗ {"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC","nSigFigs":5}}
+             (nSigFigs optional, default 5)
         """
         backoff = WS_RECONNECT_INIT
         while self._running:
             try:
                 async with websockets.connect(
                     HL_WS_URL,
-                    ping_interval=WS_PING_INTERVAL,
-                    ping_timeout=10,
+                    ping_interval=None,
+                    ping_timeout=None,
                     close_timeout=5,
+                    max_size=2**23,
                 ) as ws:
                     backoff = WS_RECONNECT_INIT
                     # Subscribe l2Book untuk setiap hot coin
+                    # Stagger 50ms antar subscribe agar tidak rate-limited
                     for coin in self._hot_coins:
                         await ws.send(json.dumps({
                             "method": "subscribe",
-                            "subscription": {"type": "l2Book", "coin": coin}
+                            "subscription": {
+                                "type": "l2Book",
+                                "coin": coin,
+                            }
                         }))
-                        await asyncio.sleep(0.02)  # stagger subscriptions
+                        await asyncio.sleep(0.05)
+
+                    last_ping = time.time()
 
                     while self._running:
                         try:
-                            msg = await asyncio.wait_for(ws.recv(), timeout=20.0)
+                            msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
                             self._handle_orderbook(msg)
+
+                            if time.time() - last_ping > WS_PING_INTERVAL:
+                                await ws.send(json.dumps({"method": "ping"}))
+                                last_ping = time.time()
+
                         except asyncio.TimeoutError:
-                            await ws.ping()
+                            await ws.send(json.dumps({"method": "ping"}))
+                            last_ping = time.time()
 
             except asyncio.CancelledError:
                 break
@@ -1166,34 +1289,58 @@ class WSFeedManager:
 
     def _handle_orderbook(self, raw: str):
         """
-        Parse l2Book message dan update OFI data di cache.
+        Parse l2Book message dari Hyperliquid WS.
 
-        Format pesan dari Hyperliquid:
-        {"channel":"l2Book","data":{"coin":"BTC","levels":[[["67234","10.5",...],[...]]]}
-        Atau format alternatif: {"coin":"BTC","levels":{"bids":[...],"asks":[...]}}
+        Format aktual Hyperliquid l2Book WS:
+          {"channel":"l2Book","data":{"coin":"BTC","time":1234567890,
+            "levels":[
+              [{"px":"67200","sz":"0.5","n":3}, ...],   ← bids
+              [{"px":"67210","sz":"0.3","n":2}, ...]    ← asks
+            ]
+          }}
+
+        Perhatikan: "px" dan "sz" adalah key (bukan index 0/1).
+        Berbeda dari REST l2Book yang pakai array [price, size].
+
+        Juga handle format lama (array):
+          "levels": [["67200","0.5"], ...]
         """
         try:
             msg = json.loads(raw)
             if msg.get("channel") != "l2Book":
                 return
+
             data = msg.get("data", {})
             coin = data.get("coin", "")
             if not coin or coin not in self.watchlist:
                 return
 
             lvls = data.get("levels", [])
-            # Hyperliquid format: levels = [[bids...], [asks...]]
-            # Each level: [price_str, size_str, ...]
-            bids = lvls[0][:5] if len(lvls) > 0 else []
-            asks = lvls[1][:5] if len(lvls) > 1 else []
-
-            if not bids or not asks:
+            if len(lvls) < 2:
                 return
 
-            bb  = float(bids[0][0])   # best bid price
-            ba  = float(asks[0][0])   # best ask price
-            bsz = sum(float(b[1]) for b in bids[:3])
-            asz = sum(float(a[1]) for a in asks[:3])
+            bids_raw = lvls[0][:5]
+            asks_raw = lvls[1][:5]
+            if not bids_raw or not asks_raw:
+                return
+
+            # Helper: ekstrak price & size dari berbagai format level
+            def _px_sz(level) -> tuple:
+                if isinstance(level, dict):
+                    return float(level.get("px", 0)), float(level.get("sz", 0))
+                elif isinstance(level, (list, tuple)) and len(level) >= 2:
+                    return float(level[0]), float(level[1])
+                return 0.0, 0.0
+
+            bb,  bsz0 = _px_sz(bids_raw[0])
+            ba,  asz0 = _px_sz(asks_raw[0])
+
+            if bb <= 0 or ba <= 0:
+                return
+
+            # Top-3 depth untuk OFI
+            bsz = sum(_px_sz(b)[1] for b in bids_raw[:3])
+            asz = sum(_px_sz(a)[1] for a in asks_raw[:3])
             mid = (bb + ba) / 2
             now = time.time()
             self._last_book_ts = now
@@ -1328,8 +1475,9 @@ class RapidScalper:
             )
             await self._ws_feed.start()
             self._log("FEED", f"🌐 WebSocket feed started — {len(self.config.watchlist)} coins, {self.config.hot_coins_l2} with L2 orderbook")
-            # Tunggu sebentar agar cache terisi sebelum trading
-            await asyncio.sleep(0.5)
+            # Tunggu cache terisi — WS butuh connect + subscribe + terima msg pertama
+            # 0.5s terlalu pendek, 2.5s cukup untuk kondisi normal
+            await asyncio.sleep(WS_WARMUP_SECONDS)
         else:
             self._log("FEED", "⚠️ websockets not installed — using REST fallback (slower)")
 
@@ -1440,26 +1588,34 @@ class RapidScalper:
     async def _get_ticks(self, session: aiohttp.ClientSession) -> Dict[str, BurstTick]:
         """
         Abstraksi feed — ambil ticks dari sumber terbaik.
-
-        Priority 1: WS cache (zero latency, preferred)
-        Priority 2: REST fallback (jika WS tidak tersedia)
-
-        Engine loop tidak perlu tahu dari mana data datang.
-        Ini adalah pattern yang dipakai di HFT systems nyata:
-        feed abstraction layer yang transparan ke strategy layer.
+        Priority 1: WS cache (zero latency)
+        Priority 2: REST fallback
         """
         if self._ws_feed is not None:
             ticks = self._ws_feed.snapshot(self.config.watchlist)
             if ticks:
+                # Log WS health setiap ~200 loop (tidak spam)
                 if self._fetch_count % 200 == 0:
                     self._log("FEED", (
-                        f"📡 WS: {len(ticks)} coins | "
+                        f"📡 WS OK: {len(ticks)} coins | "
                         f"allMids {self._ws_feed.allmids_age_ms:.0f}ms | "
                         f"book {self._ws_feed.orderbook_age_ms:.0f}ms | "
-                        f"msgs {self._ws_feed.msg_count}"
+                        f"msgs {self._ws_feed.msg_count} | "
+                        f"reconnects {self._ws_feed.reconnect_count}"
                     ))
                 return ticks
-            self._log("FEED", "⚠️ WS stale — REST fallback")
+
+            # Log stale hanya setiap 5 detik (bukan setiap loop!)
+            now = time.time()
+            if now - getattr(self, "_last_stale_log", 0) > 5.0:
+                self._last_stale_log = now
+                cached = len(self._ws_feed.cache)
+                age    = self._ws_feed.allmids_age_ms
+                self._log("FEED", (
+                    f"⚠️ WS cache kosong/stale — "
+                    f"cached={cached} coins, allMids={age:.0f}ms, "
+                    f"msgs={self._ws_feed.msg_count} — REST fallback aktif"
+                ))
 
         return await self._fetch_ticks_rest(session)
 
@@ -1812,10 +1968,12 @@ class RapidScalper:
             if burst is None or not burst.ticks:
                 result.append({
                     "coin": coin, "price": 0, "ready": False,
+                    "ticks_ready": False,                # frontend: b.ticks_ready
                     "ticks": 0, "in_position": coin in self._in_position,
                     "ofi": 0.5, "spread_pct": 0, "streak": 0,
                     "signal_long": False, "signal_short": False,
                     "cooldown_remaining": 0,
+                    "up_streak": 0, "down_streak": 0,
                 })
                 continue
 
@@ -1871,6 +2029,7 @@ class RapidScalper:
                 "coin"                 : coin,
                 "price"                : round(latest.price, 5) if latest else 0,
                 "ready"                : burst.is_ready(),
+                "ticks_ready"          : burst.is_ready(),      # frontend alias: b.ticks_ready
                 "ticks"                : burst.tick_count,
                 "in_position"          : coin in self._in_position,
                 "coin_pos_count"       : coin_pos_count,

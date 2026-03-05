@@ -213,11 +213,13 @@ const DirBadge = ({ d }) => (
 );
 
 const ExitBadge = ({ r }) => {
-  const map = { TP:'badge-green', TAKE_PROFIT:'badge-green', STOP:'badge-red',
-    HARD_STOP:'badge-red', TIMEOUT:'badge-amber', MANUAL:'badge-muted', TRAILING:'badge-muted',
+  const map = { TP:'badge-green', TAKE_PROFIT:'badge-green', SL:'badge-red', STOP:'badge-red',
+    HARD_STOP:'badge-red', TIMEOUT:'badge-amber', MANUAL:'badge-muted',
+    TRAIL:'badge-muted', TRAILING:'badge-muted',
     FLIP:'badge-amber', VAULT_HALT:'badge-red' };
-  const labels = { TP:'TP', TAKE_PROFIT:'TP', STOP:'Stop', HARD_STOP:'Hard Stop',
-    TIMEOUT:'Timeout', MANUAL:'Manual', TRAILING:'Trail', FLIP:'Flip', VAULT_HALT:'Vault' };
+  const labels = { TP:'TP', TAKE_PROFIT:'TP', SL:'SL', STOP:'Stop', HARD_STOP:'Hard Stop',
+    TIMEOUT:'Timeout', MANUAL:'Manual', TRAIL:'Trail', TRAILING:'Trail',
+    FLIP:'Flip', VAULT_HALT:'Vault' };
   return <span className={`badge ${map[r] || 'badge-muted'}`}>{labels[r] || r}</span>;
 };
 
@@ -597,7 +599,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
           { label:'Win Rate',  value:`${fmt(st.win_rate ?? 0, 1)}%`,          color: clr((st.win_rate ?? 0) - 50) },
           { label:'P.Factor',  value: fmt(st.profit_factor ?? 0, 2),          color: clr((st.profit_factor ?? 0) - 1) },
           { label:'Avg PnL',   value: fmtUSD(st.avg_net_pnl ?? 0),            color: clr(st.avg_net_pnl ?? 0) },
-          { label:'/Hour',     value: fmt(st.trades_per_hour ?? 0, 1),        color: null },
+          { label:'/Hour',     value: fmt((st.trades_per_hour ?? (st.trades_per_minute ?? 0) * 60), 1), color: null },
           { label:'Max DD',    value:`${fmt(st.max_drawdown_pct ?? 0, 2)}%`,  color:(st.max_drawdown_pct??0)>5?'var(--neg)':'var(--amber)' },
         ].map(({ label, value, color }) => (
           <div key={label} className="card" style={{ padding:'12px 14px' }}>
@@ -1023,7 +1025,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 { label:'Win Rate',      value:`${fmt(st.win_rate ?? 0, 1)}%`,          color: clr((st.win_rate??0)-50) },
                 { label:'Profit Factor', value: fmt(st.profit_factor ?? 0, 2),           color: clr((st.profit_factor??0)-1) },
                 { label:'Sharpe',        value: fmt(st.sharpe_trades ?? 0, 3),            color: clr(st.sharpe_trades??0) },
-                { label:'Total Net PnL', value: fmtUSD(st.total_net_pnl ?? 0),           color: clr(st.total_net_pnl??0) },
+                { label:'Total Net PnL', value: fmtUSD(st.total_net_pnl ?? st.net_pnl ?? 0),  color: clr(st.total_net_pnl ?? st.net_pnl ?? 0) },
                 { label:'Total Fees',    value:`−$${fmt(Math.abs(st.total_fees??0), 2)}`, color:'var(--amber)' },
                 { label:'Best Trade',    value: fmtPct(st.best_trade_pct ?? 0),           color:'var(--pos)' },
                 { label:'Worst Trade',   value: fmtPct(st.worst_trade_pct ?? 0),          color:'var(--neg)' },
@@ -1343,7 +1345,6 @@ export default function HFTBot({ initialBalance = 1000 }) {
           </div>
         </div>
       )}
-
     </div>
   );
 }
