@@ -1644,7 +1644,7 @@ export default function DemoTrading() {
             ].map(([label, value]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500, color: 'var(--ink2)' }}>{value}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 30, fontWeight: 500, color: 'var(--ink2)' }}>{value}</span>
               </div>
             ))}
             <button onClick={() => refreshArmor(account)} disabled={armorBusy} style={{ width: '100%', marginTop: 12, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 0', fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: armorBusy ? 'default' : 'pointer', opacity: armorBusy ? 0.5 : 1 }}>
