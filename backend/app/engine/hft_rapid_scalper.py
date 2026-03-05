@@ -107,6 +107,23 @@ except ImportError:
     HAS_WS = False
     print("WARNING: websockets not installed. Run: pip install websockets")
 
+# ── New APEX Engine Modules ─────────────────────────────────────────────────
+try:
+    from .apex_signal_intelligence import SignalIntelligenceGate
+    from .apex_alpha_signals import AlphaSignalEngine
+    from .apex_meta_allocator import MetaAllocator, get_allocator, reset_allocator
+    from .apex_performance_attribution import PerformanceAttributionEngine, AttributedTrade, get_attribution
+    HAS_APEX_ENGINES = True
+except ImportError:
+    try:
+        from apex_signal_intelligence import SignalIntelligenceGate
+        from apex_alpha_signals import AlphaSignalEngine
+        from apex_meta_allocator import MetaAllocator, get_allocator, reset_allocator
+        from apex_performance_attribution import PerformanceAttributionEngine, AttributedTrade, get_attribution
+        HAS_APEX_ENGINES = True
+    except ImportError:
+        HAS_APEX_ENGINES = False
+
 # ── Numba JIT untuk hot-path komputasi (FIX 3) ───────────────────────────────
 # Numba mengkompilasi fungsi Python ke native machine code TANPA GIL.
 # Pertama kali dijalankan: ~1–2 detik (JIT compile). Setelah itu: nanoseconds.
@@ -2475,6 +2492,20 @@ class RapidScalper:
             "BTC": 0.010, "ETH": 0.012, "SOL": 0.015, "BNB": 0.018, "XRP": 0.020,
         }
 
+        # ── APEX Advanced Engines (v5.0 + Apex integration) ─────────────────
+        # Uses strategy name "JACKAL" for MetaAllocator calls.
+        if HAS_APEX_ENGINES:
+            self._intel_gate    = SignalIntelligenceGate(coins=self.config.watchlist)
+            self._alpha_engine  = AlphaSignalEngine(coins=self.config.watchlist)
+            self._attribution   = get_attribution()
+            self._meta          = get_allocator(self.balance)
+        else:
+            self._intel_gate    = None
+            self._alpha_engine  = None
+            self._attribution   = None
+            self._meta          = None
+        self._alpha_refresh_ts: float = 0.0
+
 
 
     # ─── PUBLIC CONTROL ─────────────────────────────────────────
@@ -2674,7 +2705,35 @@ class RapidScalper:
                             if suggestions:
                                 reason = suggestions.pop("reason", "")
                                 self.configure(suggestions)
-                                self._log("TUNER", f" AutoTune: {suggestions} ({reason})")
+                                self._log("TUNER", f"🔧 AutoTune: {suggestions} ({reason})")
+
+                    # ── 10. [APEX] Refresh alpha signals + HMM (setiap ~60s) ──
+                    if now - self._alpha_refresh_ts > 60.0:
+                        self._alpha_refresh_ts = now
+                        # Refresh funding rate & OI dari Hyperliquid
+                        if self._alpha_engine is not None:
+                            try:
+                                await self._alpha_engine.refresh_async()
+                            except Exception:
+                                pass
+                        # Update HMM transition in intel gate + MetaAllocator regime
+                        if self._intel_gate is not None and ticks:
+                            try:
+                                from apex_engine_v6 import detect_hmm_regime
+                                import pandas as pd
+                                sample_coin = next(iter(ticks))
+                                bs = self._burst.get(sample_coin)
+                                if bs and len(bs._ticks) > 20:
+                                    prices = [t.mid for t in list(bs._ticks)[-50:]]
+                                    df_tmp = pd.DataFrame({"Close": prices})
+                                    hmm_result = detect_hmm_regime(df_tmp)
+                                    self._intel_gate.on_hmm_update(hmm_result)
+                                    regime = hmm_result.get("current_regime", "UNKNOWN")
+                                    if self._meta is not None:
+                                        self._meta.set_regime(regime)
+                                    self._log("HMM", f"Regime updated: {regime}")
+                            except Exception:
+                                pass
 
                 except asyncio.CancelledError:
                     raise
@@ -2857,6 +2916,20 @@ class RapidScalper:
                 self._burst[coin] = BurstState(coin, self.config.burst_window)
             self._burst[coin].update(tick)
 
+            # Feed SignalIntelligenceGate (Kyle's Lambda, lead-lag)
+            if self._intel_gate is not None:
+                try:
+                    self._intel_gate.on_tick(
+                        coin           = coin,
+                        price          = tick.mid,
+                        volume         = tick.bid_sz + tick.ask_sz,
+                        bid_size       = tick.bid_sz,
+                        ask_size       = tick.ask_sz,
+                        aggressor_side = None,
+                    )
+                except Exception:
+                    pass
+
     # ─── ENTRY SCANNER v5.0 (Quad Engine + All Gates) ─────────────
 
     async def _scan_entries_v5(self, ticks: Dict[str, BurstTick]):
@@ -2909,6 +2982,29 @@ class RapidScalper:
             if self.balance < capital:
                 break
 
+            # ── Gate META: MetaAllocator full capital request ──────
+            # Store decision in coin-level var so _enter_position_v5 can register_open
+            _meta_decision = None
+            if self._meta is not None:
+                try:
+                    can_add, meta_reason = self._meta.can_add_position(
+                        "JACKAL", coin, capital
+                    )
+                    if not can_add:
+                        self._log("META_BLOCK", f"{coin}: {meta_reason}")
+                        continue
+                except Exception:
+                    pass
+
+            # ── Gate INTEL: SignalIntelligenceGate ─────────────────
+            # (feeds happen in _update_burst via on_tick)
+            if self._intel_gate is not None:
+                try:
+                    # Pre-check only — direction-specific check happens in _passes_v5_gates
+                    pass  # on_tick already called in _update_burst; gate checked per-signal below
+                except Exception:
+                    pass
+
             # ── Regime gate ───────────────────────────────────────
             if self.config.use_regime_filter:
                 mods = self._regime_filter.get_modifiers(coin)
@@ -2937,6 +3033,7 @@ class RapidScalper:
                     meta["regime"]         = self._regime_filter.get(coin) if self.config.use_regime_filter else "N/A"
                     meta["l3_imbalance"]   = round(l3_imbalance, 3)
                     meta["microprice"]     = round(microprice, 6)
+                    meta["_meta_decision"] = _meta_decision   # for register_open
                     # Force market jika momentum kuat (streak ≥ threshold)
                     force_mkt = meta.get("streak", 0) >= self.config.force_market_streak
                     await self._enter_position_v5(coin, direction, tick, capital, meta, regime_mods, force_mkt)
@@ -2955,9 +3052,9 @@ class RapidScalper:
                         max_spread_pct  = self.config.max_spread_pct,
                     )
                     if signal and self._passes_v5_gates(coin, direction, l3_imbalance, meta):
-                        meta["engine"]       = "pullback"
-                        meta["l3_imbalance"] = round(l3_imbalance, 3)
-                        await self._enter_position_v5(coin, direction, tick, capital, meta, regime_mods)
+                        meta["engine"]         = "pullback"
+                        meta["l3_imbalance"]   = round(l3_imbalance, 3)
+                        meta["_meta_decision"] = _meta_decision
                         coin_pos_count += 1
                         if coin_pos_count >= self.config.max_pos_per_coin:
                             continue
@@ -2973,8 +3070,9 @@ class RapidScalper:
                         max_spread_pct = self.config.max_spread_pct,
                     )
                     if signal and self._passes_v5_gates(coin, direction, l3_imbalance, meta):
-                        meta["engine"]       = "accel"
-                        meta["l3_imbalance"] = round(l3_imbalance, 3)
+                        meta["engine"]         = "accel"
+                        meta["l3_imbalance"]   = round(l3_imbalance, 3)
+                        meta["_meta_decision"] = _meta_decision
                         await self._enter_position_v5(coin, direction, tick, capital, meta, regime_mods)
                         coin_pos_count += 1
 
@@ -3007,6 +3105,29 @@ class RapidScalper:
         if self.config.spoof_protection:
             if self._spoof_guard.is_spoof_environment(coin, direction):
                 return False
+
+        # ── APEX Gate 3: SignalIntelligenceGate (Kyle's Lambda / toxic flow) ─
+        if self._intel_gate is not None:
+            try:
+                intel_result = self._intel_gate.evaluate_entry(coin, direction=direction)
+                if not intel_result.approved:
+                    self._log("INTEL_BLOCK", f"{coin}[{direction}]: {intel_result.block_reason}")
+                    return False
+                # Pass size_scalar to meta dict so _enter_position_v5 can use it
+                meta["apex_intel_scalar"] = getattr(intel_result, "final_size_scalar", 1.0)
+            except Exception:
+                pass
+
+        # ── APEX Gate 4: AlphaSignalEngine (funding rate + OI) ────────────
+        if self._alpha_engine is not None:
+            try:
+                alpha_result = self._alpha_engine.get_alpha(coin, intended_dir=direction)
+                if alpha_result.get("skip", False):
+                    self._log("ALPHA_SKIP", f"{coin}: {alpha_result.get('skip_reason')}")
+                    return False
+                meta["apex_alpha_scalar"] = float(alpha_result.get("size_scalar", 1.0))
+            except Exception:
+                pass
 
         return True
 
@@ -3093,6 +3214,19 @@ class RapidScalper:
         pos._burst_meta  = meta       # type: ignore
         pos._engine      = meta.get("engine", "burst")  # type: ignore
         pos._exec_type   = exec_type  # type: ignore
+
+        # ── APEX: Register position with MetaAllocator ────────────
+        meta_decision = meta.get("_meta_decision")
+        if self._meta is not None and meta_decision is not None:
+            try:
+                self._meta.register_open(
+                    meta_decision,
+                    entry_price = entry,
+                    stop_price  = stop_price,
+                    position_id = pos.id,
+                )
+            except Exception:
+                pass
 
         # Update cooldown per engine
         engine_key = coin + "_" + pos._engine  # type: ignore
@@ -3329,6 +3463,23 @@ class RapidScalper:
             self._kelly_sizer.record(trade.net_pct)
         if self.config.use_adaptive_tuner:
             self._adaptive_tuner.record(net_pnl > 0)
+
+        # ── APEX: MetaAllocator release + Performance Attribution ─
+        if self._meta is not None:
+            try:
+                self._meta.release_capital(
+                    position_id = pos.id,
+                    pnl_pct     = trade.net_pct,
+                    pnl_usd     = trade.net_pnl,
+                )
+            except Exception:
+                pass
+        if self._attribution is not None:
+            try:
+                attr_trade = AttributedTrade.from_hft_trade(trade.to_dict(), "JACKAL")
+                self._attribution.record(attr_trade)
+            except Exception:
+                pass
 
         # Multi-pos support: hanya discard _in_position jika tidak ada posisi lain untuk coin ini
         remaining_open = [

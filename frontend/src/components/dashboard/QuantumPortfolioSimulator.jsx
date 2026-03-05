@@ -206,7 +206,7 @@ export default function QuantumPortfolioSimulator() {
   const SIM_PHASES = [
     { label: "FETCH",   long: "FETCHING DATA",        sub: "Pulling historical OHLCV from API — all tickers",       color: "#38bdf8" },
     { label: "GATE",    long: "INITIALIZING ARMOR",   sub: "Equity Armor + 3-Layer gate setup",                     color: "#fbbf24" },
-    { label: "SIM",     long: "SIMULATING TRADES",    sub: "Kelly sizing — partial TP — equity armor enforcement",  color: "#34d399" },
+    { label: "SIM",     long: "HFT TRADES",    sub: "Kelly sizing — partial TP — equity armor enforcement",  color: "#34d399" },
     { label: "METRICS", long: "COMPUTING METRICS",    sub: "Sharpe — Calmar — walk-forward validation — DSR",       color: "#f472b6" },
   ];
 

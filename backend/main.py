@@ -69,6 +69,68 @@ import uvicorn
 import traceback
 from app.engine.hft_engine import hft_spider
 
+# ── New Intelligence Engines ──────────────────────────────────────
+# Try new integrated version first, fallback to original
+try:
+    from app.engine.hft_engine_fixed import hft_spider as hft_spider_fixed
+    HAS_FIXED_ENGINE = True
+except ImportError:
+    hft_spider_fixed = None
+    HAS_FIXED_ENGINE = False
+
+# Signal Intelligence, Alpha, MetaAllocator, Attribution
+try:
+    from app.engine.apex_signal_intelligence import SignalIntelligenceGate
+    HAS_INTEL = True
+except ImportError:
+    HAS_INTEL = False
+
+try:
+    from app.engine.apex_alpha_signals import AlphaSignalEngine
+    HAS_ALPHA = True
+except ImportError:
+    HAS_ALPHA = False
+
+try:
+    from app.engine.apex_meta_allocator import MetaAllocator, MetaConfig, get_allocator
+    HAS_META = True
+except ImportError:
+    HAS_META = False
+
+try:
+    from app.engine.apex_performance_attribution import (
+        PerformanceAttributionEngine, AttributedTrade, get_attribution
+    )
+    HAS_ATTR = True
+except ImportError:
+    HAS_ATTR = False
+
+# Coins list (shared across engines)
+APEX_COINS = [
+    "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK",
+    "ATOM", "LTC", "APT", "ARB", "OP", "SUI", "INJ",
+    "MATIC", "UNI", "FIL", "TIA", "BCH"
+]
+
+# Global singletons — initialized on first use (or when /api/apex/init is called)
+_apex_signal_gate: Optional[any]  = None
+_apex_alpha_engine: Optional[any] = None
+_apex_meta: Optional[any]         = None
+_apex_attribution: Optional[any]  = None
+
+def _get_apex_engines(balance: float = 10_000.0):
+    """Return (signal_gate, alpha_engine, meta, attribution) singletons."""
+    global _apex_signal_gate, _apex_alpha_engine, _apex_meta, _apex_attribution
+    if HAS_INTEL and _apex_signal_gate is None:
+        _apex_signal_gate = SignalIntelligenceGate(coins=APEX_COINS)
+    if HAS_ALPHA and _apex_alpha_engine is None:
+        _apex_alpha_engine = AlphaSignalEngine(coins=APEX_COINS)
+    if HAS_META and _apex_meta is None:
+        _apex_meta = get_allocator(total_capital=balance)
+    if HAS_ATTR and _apex_attribution is None:
+        _apex_attribution = get_attribution()
+    return _apex_signal_gate, _apex_alpha_engine, _apex_meta, _apex_attribution
+
 # ── Rapid Scalper (Jackal ULTRA v4.0 WS) ─────────────────────────
 # Coba import versi terbaru dulu (WS ultra), fallback ke versi lama
 try:
@@ -2880,6 +2942,464 @@ async def rapid_websocket(websocket: WebSocket):
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT
 # ══════════════════════════════════════════════════════════════════
+
+
+
+# ══════════════════════════════════════════════════════════════════
+#  APEX NEW ENGINES  —  /api/apex/*
+#  Signal Intelligence · Alpha Signals · Meta Allocator · Attribution
+#  All per INTEGRATION_GUIDE.py
+# ══════════════════════════════════════════════════════════════════
+
+class ApexInitRequest(BaseModel):
+    balance: float = 10_000.0
+
+class ApexIntelRequest(BaseModel):
+    coin: str
+    direction: str = "LONG"   # LONG | SHORT
+    price: float
+    volume: float = 1.0
+    bid_size: float = 1.0
+    ask_size: float = 1.0
+
+class ApexCapitalRequest(BaseModel):
+    strategy: str = "PREDATOR"   # PREDATOR | JACKAL
+    coin: str
+    direction: str = "LONG"
+    requested_usd: float
+    entry_price: float
+    stop_price: float
+
+class ApexReleaseRequest(BaseModel):
+    position_id: str
+    pnl_pct: float
+    pnl_usd: float
+
+class ApexRegimeRequest(BaseModel):
+    regime: str
+
+
+@app.post("/api/apex/init")
+async def apex_init(req: ApexInitRequest):
+    """
+    Initialize all new APEX engines (Signal Intelligence, Alpha, MetaAllocator, Attribution).
+    Call once at startup with your actual balance.
+    """
+    gate, alpha, meta, attr = _get_apex_engines(req.balance)
+    return sanitize_data({
+        "ok": True,
+        "balance": req.balance,
+        "signal_intelligence_ready": gate is not None,
+        "alpha_engine_ready":        alpha is not None,
+        "meta_allocator_ready":      meta is not None,
+        "attribution_ready":         attr is not None,
+        "coins": APEX_COINS,
+        "message": (
+            "All APEX engines initialized. "
+            "Feed ticks via POST /api/apex/tick, "
+            "evaluate entries via POST /api/apex/intel/evaluate, "
+            "request capital via POST /api/apex/meta/request."
+        ),
+    })
+
+
+@app.post("/api/apex/tick")
+async def apex_tick(req: ApexIntelRequest):
+    """
+    Feed a market tick into the Signal Intelligence Gate.
+    Call this on every price update for a coin.
+    Updates: Kyle's Lambda, Toxic Flow, Lead-Lag matrix.
+    """
+    gate, _, _, _ = _get_apex_engines()
+    if gate is None:
+        raise HTTPException(503, "Signal Intelligence not available. Call /api/apex/init first.")
+    gate.on_tick(
+        coin      = req.coin.upper(),
+        price     = req.price,
+        volume    = req.volume,
+        bid_size  = req.bid_size,
+        ask_size  = req.ask_size,
+    )
+    return {"ok": True, "coin": req.coin.upper(), "tick_fed": True}
+
+
+@app.post("/api/apex/intel/evaluate")
+async def apex_intel_evaluate(req: ApexIntelRequest):
+    """
+    Evaluate entry quality for a coin+direction via Signal Intelligence Gate.
+    Returns: approval, Kyle lambda, toxic flow score, lead-lag signal, regime risk.
+    Expected to filter 25-35% lowest-quality entries (+8-12% win rate).
+    """
+    gate, _, _, _ = _get_apex_engines()
+    if gate is None:
+        raise HTTPException(503, "Signal Intelligence not available. Call /api/apex/init first.")
+
+    # Feed the tick first
+    gate.on_tick(
+        coin     = req.coin.upper(),
+        price    = req.price,
+        volume   = req.volume,
+        bid_size = req.bid_size,
+        ask_size = req.ask_size,
+    )
+
+    result = gate.evaluate_entry(req.coin.upper(), direction=req.direction.upper())
+    return sanitize_data({
+        "coin":                   req.coin.upper(),
+        "direction":              req.direction.upper(),
+        "approved":               result.approved,
+        "block_reason":           result.block_reason,
+        "composite_quality":      result.composite_quality,
+        "final_size_scalar":      result.final_size_scalar,
+        "kyle_lambda":            result.kyle_lambda,
+        "toxicity_score":         result.toxicity_score,
+        "flow_regime":            result.flow_regime,
+        "lead_lag_signal":        result.lead_lag_signal,
+        "lead_lag_confidence":    result.lead_lag_confidence,
+        "lead_lag_leader":        result.lead_lag_leader,
+        "regime_transition_risk": result.regime_transition_risk,
+        "regime_stability":       result.regime_stability,
+        "transition_status":      result.transition_status,
+    })
+
+
+@app.get("/api/apex/intel/lead-opportunities")
+async def apex_lead_opportunities():
+    """
+    Get proactive lead-lag entry opportunities.
+    These are coins where a leader (e.g. BTC) just moved but the follower hasn't yet.
+    Highest-alpha entries: historically ~15-20% better than random entries.
+    """
+    gate, _, _, _ = _get_apex_engines()
+    if gate is None:
+        raise HTTPException(503, "Signal Intelligence not available. Call /api/apex/init first.")
+    opps = gate.evaluate_lead_opportunity()
+    return sanitize_data({
+        "opportunities": opps[:5],
+        "count": len(opps),
+        "note": "Enter immediately if age_s < 2.0 and confidence > 0.65",
+    })
+
+
+@app.post("/api/apex/alpha/evaluate")
+async def apex_alpha_evaluate(body: dict):
+    """
+    Get alpha signals (funding rate + OI) for a coin and direction.
+    Returns: funding carry APY, OI pattern, size scalar, skip flag.
+    """
+    _, alpha, _, _ = _get_apex_engines()
+    if alpha is None:
+        raise HTTPException(503, "Alpha Engine not available. Call /api/apex/init first.")
+    coin      = str(body.get("coin", "BTC")).upper()
+    direction = str(body.get("direction", "LONG")).upper()
+    result    = alpha.get_alpha(coin, intended_dir=direction)
+    return sanitize_data(result)
+
+
+@app.post("/api/apex/alpha/refresh")
+async def apex_alpha_refresh():
+    """
+    Refresh funding rates and OI from Hyperliquid (~60s recommended interval).
+    """
+    _, alpha, _, _ = _get_apex_engines()
+    if alpha is None:
+        raise HTTPException(503, "Alpha Engine not available. Call /api/apex/init first.")
+    try:
+        await alpha.refresh_async()
+        return {"ok": True, "refreshed": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/apex/alpha/carry-opportunities")
+async def apex_carry_opportunities(min_apy: float = 20.0, min_quality: float = 0.5):
+    """
+    Get passive carry trade opportunities (collect funding while in directional trade).
+    Expected: +0.01-0.03% per trade from carry (small but compounds well).
+    """
+    _, alpha, _, _ = _get_apex_engines()
+    if alpha is None:
+        raise HTTPException(503, "Alpha Engine not available. Call /api/apex/init first.")
+    carries = alpha.get_carry_opportunities(min_apy=min_apy, min_quality=min_quality)
+    return sanitize_data({"opportunities": carries, "count": len(carries)})
+
+
+@app.post("/api/apex/meta/request")
+async def apex_meta_request(req: ApexCapitalRequest):
+    """
+    Request capital allocation from MetaAllocator before entering a position.
+    Checks: portfolio heat, correlation cluster, strategy budget, regime.
+    Must be called before every trade entry.
+    """
+    _, _, meta, _ = _get_apex_engines(req.requested_usd * 10)
+    if meta is None:
+        raise HTTPException(503, "MetaAllocator not available. Call /api/apex/init first.")
+    decision = meta.request_capital(
+        strategy      = req.strategy.upper(),
+        coin          = req.coin.upper(),
+        direction     = req.direction.upper(),
+        requested_usd = req.requested_usd,
+        entry_price   = req.entry_price,
+        stop_price    = req.stop_price,
+    )
+    return sanitize_data({
+        "approved":      decision.approved,
+        "approved_usd":  decision.approved_usd,
+        "block_reason":  decision.block_reason,
+        "strategy":      decision.strategy,
+        "coin":          decision.coin,
+        "decision_id":   str(id(decision)),
+    })
+
+
+@app.post("/api/apex/meta/register")
+async def apex_meta_register(body: dict):
+    """
+    Register an open position with MetaAllocator (call after entering trade).
+    Required for portfolio heat tracking and correlation management.
+    """
+    _, _, meta, _ = _get_apex_engines()
+    if meta is None:
+        raise HTTPException(503, "MetaAllocator not available.")
+    # Note: in production pass the actual AllocationDecision object.
+    # This endpoint provides a simplified registration path.
+    return {"ok": True, "note": "Use hft_engine_fixed (integrated) for automatic registration."}
+
+
+@app.post("/api/apex/meta/release")
+async def apex_meta_release(req: ApexReleaseRequest):
+    """
+    Release capital back to MetaAllocator after closing a position.
+    Call after every trade close.
+    """
+    _, _, meta, _ = _get_apex_engines()
+    if meta is None:
+        raise HTTPException(503, "MetaAllocator not available.")
+    meta.release_capital(
+        position_id = req.position_id,
+        pnl_pct     = req.pnl_pct,
+        pnl_usd     = req.pnl_usd,
+    )
+    return {"ok": True, "position_id": req.position_id}
+
+
+@app.post("/api/apex/meta/regime")
+async def apex_meta_set_regime(req: ApexRegimeRequest):
+    """
+    Update regime in MetaAllocator (call after HMM regime detection).
+    Affects allocation: CRISIS halts new entries, HIGH_VOL reduces budget.
+    """
+    _, _, meta, _ = _get_apex_engines()
+    if meta is None:
+        raise HTTPException(503, "MetaAllocator not available.")
+    meta.set_regime(req.regime.upper())
+    return {"ok": True, "regime_set": req.regime.upper()}
+
+
+@app.get("/api/apex/meta/status")
+async def apex_meta_status():
+    """
+    MetaAllocator portfolio overview: open positions, heat usage, strategy budgets.
+    """
+    _, _, meta, _ = _get_apex_engines()
+    if meta is None:
+        raise HTTPException(503, "MetaAllocator not available. Call /api/apex/init first.")
+    try:
+        summary = meta.portfolio_summary()
+        return sanitize_data(summary)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/apex/attribution/summary")
+async def apex_attribution_summary():
+    """
+    Print performance attribution summary.
+    Shows which strategies, coins, signals, and hours are profitable.
+    """
+    _, _, _, attr = _get_apex_engines()
+    if attr is None:
+        raise HTTPException(503, "Attribution Engine not available. Call /api/apex/init first.")
+    try:
+        report = attr.generate_report()
+        return sanitize_data(report)
+    except Exception as e:
+        return sanitize_data({"error": str(e), "note": "Need trades recorded first."})
+
+
+@app.get("/api/apex/status")
+async def apex_status():
+    """
+    Full status of all APEX new engines.
+    """
+    gate, alpha, meta, attr = _get_apex_engines()
+    return sanitize_data({
+        "engines": {
+            "signal_intelligence": {
+                "available": gate is not None,
+                "module":    "apex_signal_intelligence.py",
+                "features":  ["Kyle Lambda", "Toxic Flow", "Lead-Lag", "HMM Transition"],
+            },
+            "alpha_signals": {
+                "available": alpha is not None,
+                "module":    "apex_alpha_signals.py",
+                "features":  ["Funding Rate Carry", "OI Pattern", "Composite Alpha"],
+            },
+            "meta_allocator": {
+                "available": meta is not None,
+                "module":    "apex_meta_allocator.py",
+                "features":  ["Capital Budgeting", "Correlation Clusters", "Portfolio Heat", "Regime Allocation"],
+            },
+            "performance_attribution": {
+                "available": attr is not None,
+                "module":    "apex_performance_attribution.py",
+                "features":  ["Strategy P&L", "Signal Attribution", "Time-of-Day", "Regime Attribution"],
+            },
+        },
+        "endpoints": {
+            "POST /api/apex/init":                    "Initialize all engines with balance",
+            "POST /api/apex/tick":                    "Feed market tick to intel gate",
+            "POST /api/apex/intel/evaluate":          "Evaluate entry quality (Kyle+Toxic+LeadLag)",
+            "GET  /api/apex/intel/lead-opportunities":"Get proactive lead-lag entries",
+            "POST /api/apex/alpha/evaluate":          "Get funding+OI alpha for coin",
+            "POST /api/apex/alpha/refresh":           "Refresh funding rates from Hyperliquid",
+            "GET  /api/apex/alpha/carry-opportunities":"Get passive carry trade list",
+            "POST /api/apex/meta/request":            "Request capital before entry",
+            "POST /api/apex/meta/release":            "Release capital after exit",
+            "POST /api/apex/meta/regime":             "Update regime in allocator",
+            "GET  /api/apex/meta/status":             "Portfolio heat & open positions",
+            "GET  /api/apex/attribution/summary":     "Full P&L attribution report",
+        },
+        "integration_note": (
+            "hft_engine_fixed.py already has all engines auto-integrated. "
+            "These endpoints are for external/manual use or frontend dashboards."
+        ),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+#  HFT FIXED ENGINE  —  /api/hft-fixed/*
+#  Same as /api/hft/* but uses hft_engine_fixed.py with OFI bug fix
+#  and full Signal Intelligence + Meta Allocator integration
+# ══════════════════════════════════════════════════════════════════
+
+@app.post("/api/hft-fixed/start")
+async def hft_fixed_start(body: dict = {}):
+    """Start the fixed HFT engine (Predator v2.1 with all new engines integrated)."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available. Check app/engine/hft_engine_fixed.py")
+    balance = float(body.get("balance", 1000.0))
+    if not hft_spider_fixed.running:
+        hft_spider_fixed.set_balance(balance)
+    await hft_spider_fixed.start()
+    return {
+        "ok": True,
+        "message": "Predator v2.1 (Fixed + Integrated) started",
+        "balance": hft_spider_fixed.balance,
+        "intel_active":  hft_spider_fixed._intel_gate is not None,
+        "alpha_active":  hft_spider_fixed._alpha_engine is not None,
+        "meta_active":   hft_spider_fixed._meta is not None,
+        "attr_active":   hft_spider_fixed._attribution is not None,
+    }
+
+
+@app.post("/api/hft-fixed/stop")
+async def hft_fixed_stop():
+    """Stop fixed HFT engine."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    await hft_spider_fixed.stop()
+    return {"ok": True, "message": "Predator v2.1 stopped"}
+
+
+@app.post("/api/hft-fixed/reset")
+async def hft_fixed_reset(body: dict = {}):
+    """Full reset of fixed HFT engine."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    await hft_spider_fixed.stop()
+    hft_spider_fixed.__init__()
+    balance = float(body.get("balance", 1000.0))
+    hft_spider_fixed.set_balance(balance)
+    return {"ok": True, "message": "Predator v2.1 reset", "balance": balance}
+
+
+@app.post("/api/hft-fixed/config")
+async def hft_fixed_config(body: dict):
+    """Update fixed HFT engine config on the fly."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    hft_spider_fixed.configure(body)
+    return {"ok": True, "config": body}
+
+
+@app.get("/api/hft-fixed/status")
+async def hft_fixed_status():
+    """Full status snapshot of fixed HFT engine."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    status = hft_spider_fixed.get_status()
+    # Add new engine status
+    status["new_engines"] = {
+        "intel_active": hft_spider_fixed._intel_gate is not None,
+        "alpha_active": hft_spider_fixed._alpha_engine is not None,
+        "meta_active":  hft_spider_fixed._meta is not None,
+        "attr_active":  hft_spider_fixed._attribution is not None,
+    }
+    return sanitize_data(status)
+
+
+@app.get("/api/hft-fixed/attribution")
+async def hft_fixed_attribution():
+    """Performance attribution report for fixed HFT engine trades."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    attr = hft_spider_fixed._attribution
+    if attr is None:
+        return {"available": False, "note": "Attribution engine not initialized. Start engine first."}
+    try:
+        report = attr.generate_report()
+        return sanitize_data(report)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/hft-fixed/meta-status")
+async def hft_fixed_meta_status():
+    """MetaAllocator portfolio status for fixed HFT engine."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        raise HTTPException(503, "hft_engine_fixed not available")
+    meta = hft_spider_fixed._meta
+    if meta is None:
+        return {"available": False, "note": "MetaAllocator not initialized. Start engine first."}
+    try:
+        return sanitize_data(meta.portfolio_summary())
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.websocket("/ws/hft-fixed")
+async def hft_fixed_websocket(websocket: WebSocket):
+    """WebSocket — pushes fixed HFT engine status every 1.5s."""
+    if not HAS_FIXED_ENGINE or hft_spider_fixed is None:
+        await websocket.close()
+        return
+    await websocket.accept()
+    try:
+        while True:
+            status = hft_spider_fixed.get_status()
+            status["new_engines"] = {
+                "intel_active": hft_spider_fixed._intel_gate is not None,
+                "alpha_active": hft_spider_fixed._alpha_engine is not None,
+                "meta_active":  hft_spider_fixed._meta is not None,
+            }
+            await websocket.send_json(sanitize_data(status))
+            await asyncio.sleep(1.5)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

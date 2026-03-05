@@ -71,6 +71,35 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
 
+# ══════════════════════════════════════════════════════════════════
+#  NEW ENGINE IMPORTS — Signal Intelligence, Alpha, Meta, Attribution
+#  Semua try/except agar engine tetap berjalan tanpa module baru
+# ══════════════════════════════════════════════════════════════════
+
+try:
+    from apex_signal_intelligence import SignalIntelligenceGate
+    HAS_INTEL = True
+except ImportError:
+    HAS_INTEL = False
+
+try:
+    from apex_alpha_signals import AlphaSignalEngine
+    HAS_ALPHA = True
+except ImportError:
+    HAS_ALPHA = False
+
+try:
+    from apex_meta_allocator import get_allocator
+    HAS_META = True
+except ImportError:
+    HAS_META = False
+
+try:
+    from apex_performance_attribution import get_attribution, AttributedTrade
+    HAS_ATTR = True
+except ImportError:
+    HAS_ATTR = False
+
 
 # ══════════════════════════════════════════════════════════════════
 #  KONSTANTA & MATH
@@ -221,11 +250,20 @@ class CoinMicrostructure:
         """
         Order Flow Imbalance: bid_vol / (bid_vol + ask_vol).
         > 0.6 = tekanan beli, < 0.4 = tekanan jual, 0.4-0.6 = neutral.
+
+        FIX: 0.0 sentinel values (no real L2 data) are excluded.
+        Without this fix, coins without L2 would always return OFI=0.5 (neutral),
+        making Gate 3 ineffective for 15 out of 20 watchlist coins.
         """
-        total_bid = sum(self.bid_sizes) if self.bid_sizes else 0
-        total_ask = sum(self.ask_sizes) if self.ask_sizes else 0
+        # Filter out 0.0 sentinels (allMids placeholder, not real size data)
+        real_bids = [s for s in self.bid_sizes if s > 0.0]
+        real_asks = [s for s in self.ask_sizes if s > 0.0]
+        total_bid = sum(real_bids) if real_bids else 0
+        total_ask = sum(real_asks) if real_asks else 0
         total = total_bid + total_ask
-        return total_bid / total if total > 1e-10 else 0.5
+        if total < 1e-10:
+            return 0.5   # truly no data → neutral (not false 0.5 from fake sizes)
+        return total_bid / total
 
     def is_spread_normal(self, max_mult: float) -> bool:
         """Spread saat ini masih dalam batas normal."""
@@ -564,6 +602,13 @@ class HFTPredator:
         self._last_trade_ts: Dict[str, float] = {}
         self._cooldown_seconds: int = 15
 
+        # ── NEW ENGINES (initialized in set_balance / lazily) ────────────────
+        self._intel_gate  = None   # SignalIntelligenceGate  (apex_signal_intelligence)
+        self._alpha_engine = None  # AlphaSignalEngine       (apex_alpha_signals)
+        self._meta        = None   # MetaAllocator           (apex_meta_allocator)
+        self._attribution = None   # PerformanceAttributionEngine (apex_performance_attribution)
+        self._alpha_refresh_ts: float = 0.0   # last time alpha was refreshed
+
     # ─── PUBLIC CONTROL ─────────────────────────────────────────
 
     def configure(self, cfg: dict):
@@ -578,6 +623,17 @@ class HFTPredator:
         self.stats.peak_balance = balance
         self.equity_curve     = [{"ts": time.time(), "balance": balance}]
         self._cb              = CircuitBreaker(self.config, balance)
+
+        # Initialize new intelligence engines
+        coins = self.config.watchlist
+        if HAS_INTEL and self._intel_gate is None:
+            self._intel_gate   = SignalIntelligenceGate(coins=coins)
+        if HAS_ALPHA and self._alpha_engine is None:
+            self._alpha_engine = AlphaSignalEngine(coins=coins)
+        if HAS_META:
+            self._meta         = get_allocator(total_capital=balance)
+        if HAS_ATTR and self._attribution is None:
+            self._attribution  = get_attribution()
 
     async def start(self):
         if self.running:
@@ -648,6 +704,36 @@ class HFTPredator:
                     # 7. Equity snapshot
                     self._record_equity_snapshot()
 
+                    # 8. [NEW] Refresh alpha signals every ~60s
+                    now = time.time()
+                    if (self._alpha_engine is not None and
+                            now - self._alpha_refresh_ts > 60.0):
+                        try:
+                            await self._alpha_engine.refresh_async()
+                        except Exception:
+                            pass
+                        self._alpha_refresh_ts = now
+
+                        # Also update HMM transition in intel gate
+                        if self._intel_gate is not None and ticks:
+                            # Build minimal df from recent microstructure
+                            try:
+                                from apex_engine_v6 import detect_hmm_regime
+                                import pandas as pd
+                                sample_coin = next(iter(ticks))
+                                ms = self._ms.get(sample_coin)
+                                if ms and len(ms._prices) > 20:
+                                    prices = list(ms._prices)
+                                    df_tmp = pd.DataFrame({"Close": prices})
+                                    hmm_result = detect_hmm_regime(df_tmp)
+                                    self._intel_gate.on_hmm_update(hmm_result)
+                                    regime = hmm_result.get("current_regime", "UNKNOWN")
+                                    if self._meta is not None:
+                                        self._meta.set_regime(regime)
+                                    self._regime = regime
+                            except Exception:
+                                pass
+
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -680,24 +766,69 @@ class HFTPredator:
                             slip = self._slippage_model.get(coin, 0.03)
                             half_spread = mid * (slip / 100) * 0.5
 
+                            # FIX: bid_size/ask_size = 0.0 as sentinel → means "no OFI data yet"
+                            # Will be overwritten by L2 fetch OR by price-delta proxy below.
+                            # This prevents false OFI=0.5 (neutral) for all non-L2 coins.
                             ticks[coin] = TickData(
                                 coin     = coin,
                                 price    = mid,
                                 bid      = mid - half_spread,
                                 ask      = mid + half_spread,
-                                bid_size = 1.0,  # default, diupdate dari L2 jika ada
-                                ask_size = 1.0,
+                                bid_size = 0.0,   # FIX: was 1.0 (synthetic neutral OFI)
+                                ask_size = 0.0,   # FIX: was 1.0 — will be set by proxy below
                                 ts       = ts,
                             )
         except Exception:
             pass
 
+        # ── FIX OFI SYNTHETIC BUG ──────────────────────────────────────────────
+        # PROBLEM: Coins yang tidak dapat L2 data pakai bid_size=1.0 & ask_size=1.0
+        #          → OFI selalu 0.5 (neutral) → Gate 3 tidak berfungsi
+        #
+        # FIX A: Perluas hot_coins dari 3 ke 8 coins (Tier1 + Tier2)
+        # FIX B: Untuk coins yang tetap tidak dapat L2, estimasi bid/ask size
+        #        dari price momentum (proxy order flow imbalance):
+        #        Jika harga naik dari tick sebelumnya → bid_size > ask_size
+        #        Jika harga turun → ask_size > bid_size
+        #        Rasio berdasarkan magnitude of move (0.5%-1.5% price change → 1.5-3.0x imbalance)
+        #
+        # Ini tidak seakurat L2 real data, tapi jauh lebih baik dari bid=ask=1.0 selalu.
+        # Tier 1 & 2 coins tetap dapat L2 aktual.
+
+        # Estimasi proxy OFI dari price delta untuk coins non-L2
+        for coin, tick in list(ticks.items()):
+            if coin in self._ms and len(self._ms[coin].price_ticks) >= 2:
+                prev_prices = list(self._ms[coin].price_ticks)
+                prev_price  = prev_prices[-1]   # last known price before this tick
+                dp = tick.mid_price - prev_price
+                if abs(dp) > 1e-10 and prev_price > 0:
+                    move_pct = abs(dp / prev_price) * 100
+                    # Imbalance ratio: bigger move = stronger imbalance signal
+                    imbalance_mult = min(1.0 + move_pct * 20, 3.5)  # 0.05% move → 2.0x
+                    if dp > 0:   # price up → buy pressure
+                        ticks[coin] = TickData(
+                            coin=tick.coin, price=tick.price,
+                            bid=tick.bid, ask=tick.ask,
+                            bid_size=imbalance_mult,
+                            ask_size=1.0,
+                            ts=tick.ts,
+                        )
+                    else:        # price down → sell pressure
+                        ticks[coin] = TickData(
+                            coin=tick.coin, price=tick.price,
+                            bid=tick.bid, ask=tick.ask,
+                            bid_size=1.0,
+                            ask_size=imbalance_mult,
+                            ts=tick.ts,
+                        )
+
         # L2 orderbook untuk coins yang aktif di posisi atau kandidat entry
         hot_coins = set(self._in_position)
         if len(self._open_positions()) < self.config.max_positions:
-            hot_coins.update(self.config.watchlist[:3])  # BTC, ETH, SOL selalu dipantau
+            # FIX: expanded from watchlist[:3] to [:8] — Tier1 + Tier2 always get real L2
+            hot_coins.update(self.config.watchlist[:8])
 
-        for coin in list(hot_coins)[:5]:  # max 5 L2 request per tick
+        for coin in list(hot_coins)[:8]:  # FIX: increased from 5 to 8 L2 requests per tick
             try:
                 async with session.post(
                     self.HL_INFO_URL,
@@ -738,6 +869,16 @@ class HFTPredator:
                 self._ms[coin] = CoinMicrostructure(coin=coin)
             self._ms[coin].update(tick)
 
+            # Feed SignalIntelligenceGate (Kyle Lambda + Lead-Lag)
+            if self._intel_gate is not None:
+                self._intel_gate.on_tick(
+                    coin       = coin,
+                    price      = tick.mid_price,
+                    volume     = tick.bid_size + tick.ask_size,
+                    bid_size   = tick.bid_size,
+                    ask_size   = tick.ask_size,
+                )
+
     # ─── THE BRAIN — ENTRY SCANNER ──────────────────────────────
 
     def _scan_entries(self, ticks: Dict[str, TickData]):
@@ -746,6 +887,9 @@ class HFTPredator:
         Gate 1: Microstructure data sudah ready (≥20 ticks)
         Gate 2: Spread normal (tidak ada manipulasi / gap)
         Gate 3: Z-Score + OFI alignment (min 2 dari 3 sub-signals)
+        Gate 4 [NEW]: MetaAllocator portfolio heat & correlation check
+        Gate 5 [NEW]: SignalIntelligenceGate (Kyle Lambda + Toxic Flow)
+        Gate 6 [NEW]: AlphaSignalEngine (Funding Rate + OI confirmation)
         """
         available_slots = self.config.max_positions - len(self._open_positions())
         if available_slots <= 0:
@@ -786,49 +930,110 @@ class HFTPredator:
                 continue
 
             signal, direction, score = self._evaluate_signal(z, ofi, tick, ms)
+            if not signal:
+                continue
 
-            if signal:
-                # Kalkulasi expected value setelah fee + slippage
-                slip_pct = self._slippage_model.get(coin, 0.03)
-                total_cost_pct = FEE_ROUND_TRIP + slip_pct
+            # Kalkulasi base capital & stop
+            slip_pct       = self._slippage_model.get(coin, 0.03)
+            total_cost_pct = FEE_ROUND_TRIP + slip_pct
+            stop_dist_pct  = (atr * self.config.atr_stop_mult / tick.mid_price) * 100
+            tp_dist_pct    = stop_dist_pct * self.config.min_rr_ratio
+            stop_price     = (tick.mid_price * (1 - stop_dist_pct / 100)
+                              if direction == "LONG"
+                              else tick.mid_price * (1 + stop_dist_pct / 100))
 
-                # Stop distance
-                stop_dist_pct = (atr * self.config.atr_stop_mult / tick.mid_price) * 100
-                tp_dist_pct   = stop_dist_pct * self.config.min_rr_ratio
+            expected_win_rate = 0.55
+            ev_pct = (tp_dist_pct * expected_win_rate
+                      - stop_dist_pct * (1 - expected_win_rate)
+                      - total_cost_pct)
 
-                # Expected value: tp_pct × win_rate - stop_pct × (1-win_rate) - cost
-                # Asumsikan win_rate 55% untuk mean reversion setup yang bagus
-                expected_win_rate = 0.55
-                ev_pct = (tp_dist_pct * expected_win_rate
-                          - stop_dist_pct * (1 - expected_win_rate)
-                          - total_cost_pct)
+            if ev_pct <= 0:
+                continue
+            if tp_dist_pct < MIN_GROSS_PCT:
+                continue
 
-                # Hanya masuk jika expected value positif
-                if ev_pct <= 0:
+            # ── Gate 4 [NEW]: MetaAllocator pre-check ──────────
+            capital = self.config.capital_per_trade
+            if self._meta is not None:
+                can_add, meta_reason = self._meta.can_add_position(
+                    "PREDATOR", coin, capital
+                )
+                if not can_add:
+                    self._log("META_PRE", f"{coin}: {meta_reason}")
                     continue
 
-                # Cek minimum gross target
-                if tp_dist_pct < MIN_GROSS_PCT:
+            # ── Gate 5 [NEW]: Signal Intelligence ──────────────
+            size_scalar = 1.0
+            intel_meta  = {}
+            if self._intel_gate is not None:
+                intel = self._intel_gate.evaluate_entry(coin, direction=direction)
+                if not intel.approved:
+                    self._log("INTEL_BLOCK", f"{coin}: {intel.block_reason}")
                     continue
+                size_scalar = intel.final_size_scalar
+                intel_meta  = {
+                    "kyle_lambda"            : intel.kyle_lambda,
+                    "toxicity_score"         : intel.toxicity_score,
+                    "lead_lag_signal"        : intel.lead_lag_signal,
+                    "regime_transition_risk" : intel.regime_transition_risk,
+                }
 
-                candidates.append({
-                    "coin":      coin,
-                    "direction": direction,
-                    "price":     tick.mid_price,
-                    "score":     score,
-                    "z":         z,
-                    "ofi":       ofi,
-                    "atr":       atr,
-                    "ev_pct":    ev_pct,
-                    "stop_dist": stop_dist_pct,
-                    "tp_dist":   tp_dist_pct,
-                })
+            # ── Gate 6 [NEW]: Alpha Signals ────────────────────
+            alpha_meta = {}
+            if self._alpha_engine is not None:
+                alpha = self._alpha_engine.get_alpha(coin, intended_dir=direction)
+                if alpha.get("skip"):
+                    self._log("ALPHA_SKIP", f"{coin}: {alpha.get('skip_reason')}")
+                    continue
+                alpha_scalar = alpha.get("size_scalar", 1.0)
+                size_scalar  = size_scalar * alpha_scalar
+                alpha_meta   = {
+                    "funding_signal": alpha.get("funding", {}).get("signal_type", "NONE"),
+                    "oi_pattern"    : alpha.get("oi",      {}).get("pattern",     "NEUTRAL"),
+                    "carry_apy"     : alpha.get("funding", {}).get("apy_pct",     0.0),
+                }
+
+            capital = self.config.capital_per_trade * max(size_scalar, 0.25)
+
+            # ── MetaAllocator capital request ───────────────────
+            meta_decision = None
+            if self._meta is not None:
+                meta_decision = self._meta.request_capital(
+                    strategy      = "PREDATOR",
+                    coin          = coin,
+                    direction     = direction,
+                    requested_usd = capital,
+                    entry_price   = tick.mid_price,
+                    stop_price    = stop_price,
+                )
+                if not meta_decision.approved:
+                    self._log("META_BLOCK", f"{coin}: {meta_decision.block_reason}")
+                    continue
+                capital = meta_decision.approved_usd
+
+            candidates.append({
+                "coin":          coin,
+                "direction":     direction,
+                "price":         tick.mid_price,
+                "score":         score,
+                "z":             z,
+                "ofi":           ofi,
+                "atr":           atr,
+                "ev_pct":        ev_pct,
+                "stop_dist":     stop_dist_pct,
+                "tp_dist":       tp_dist_pct,
+                "capital":       capital,
+                "stop_price":    stop_price,
+                "meta_decision": meta_decision,
+                "intel_meta":    intel_meta,
+                "alpha_meta":    alpha_meta,
+            })
 
         # Sort by expected value
         candidates.sort(key=lambda x: x["ev_pct"], reverse=True)
 
         for c in candidates[:available_slots]:
-            if self.balance >= self.config.capital_per_trade:
+            if self.balance >= c["capital"]:
                 self._enter_position(c)
 
     def _evaluate_signal(
@@ -905,7 +1110,8 @@ class HFTPredator:
         else:
             entry_price = mid_price * (1 - slip_pct / 100)
 
-        capital = self.config.capital_per_trade
+        # Use capital from candidate (may be scaled by Intel/Alpha/Meta)
+        capital = c.get("capital", self.config.capital_per_trade)
         qty     = capital / entry_price
 
         # Adaptive stops
@@ -940,12 +1146,21 @@ class HFTPredator:
         self.positions[pos.id] = pos
         self._in_position.add(coin)
 
+        # Register with MetaAllocator
+        meta_decision = c.get("meta_decision")
+        if self._meta is not None and meta_decision is not None:
+            self._meta.register_open(meta_decision, entry_price, stop_price, position_id=pos.id)
+
         rr = round(tp_dist / stop_dist, 2) if stop_dist > 0 else 0
+        intel_str = ""
+        if c.get("intel_meta"):
+            im = c["intel_meta"]
+            intel_str = f" | Tox={im.get('toxicity_score', 0):.2f} λ={im.get('kyle_lambda', 0):.4f}"
         self._log("ENTRY", (
-            f"{'🟢 LONG' if direction == 'LONG' else ' SHORT'} "
+            f"{'🟢 LONG' if direction == 'LONG' else '🔴 SHORT'} "
             f"{coin} @ ${entry_price:,.4f} | "
             f"Stop ${stop_price:,.4f} | TP ${tp_price:,.4f} | "
-            f"RR {rr}R | Z={c['z']:+.2f} OFI={c['ofi']:.2f} EV={c['ev_pct']:+.3f}%"
+            f"RR {rr}R | Z={c['z']:+.2f} OFI={c['ofi']:.2f} EV={c['ev_pct']:+.3f}%{intel_str}"
         ))
 
     def _close_position(self, pos: HFTPosition, reason: str):
@@ -1008,7 +1223,23 @@ class HFTPredator:
         self._last_trade_ts[pos.coin] = time.time()   # cooldown timer mulai
         del self.positions[pos.id]
 
-        emoji = "" if net_pnl > 0 else ""
+        # Release capital in MetaAllocator
+        if self._meta is not None:
+            self._meta.release_capital(
+                position_id = pos.id,
+                pnl_pct     = net_pct,
+                pnl_usd     = net_pnl,
+            )
+
+        # Record to Performance Attribution Engine
+        if self._attribution is not None and HAS_ATTR:
+            try:
+                attr_trade = AttributedTrade.from_hft_trade(trade.to_dict(), "PREDATOR")
+                self._attribution.record(attr_trade)
+            except Exception:
+                pass
+
+        emoji = "✅" if net_pnl > 0 else "❌"
         self._log("EXIT", (
             f"{emoji} {pos.direction} {pos.coin} [{reason}] "
             f"@ ${exit_price:,.4f} | "
