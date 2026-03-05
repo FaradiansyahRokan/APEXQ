@@ -219,7 +219,7 @@ export const GlobalStyles = () => (
     }
 
     /* ── Base ──────────────────────────────────────────────── */
-    html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
     body {
       font-family: var(--sans);
       font-weight: 400;
@@ -248,7 +248,7 @@ export const GlobalStyles = () => (
     .badge {
       display: inline-flex; align-items: center; gap: 4px;
       padding: 2px 7px;
-      font-family: var(--mono); font-size: 10px; font-weight: 500;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
       letter-spacing: 0.08em; text-transform: uppercase;
       border-radius: 4px; white-space: nowrap;
     }
@@ -294,7 +294,7 @@ export const GlobalStyles = () => (
     /* ── Sidebar section ──────────────────────────────────── */
     .section-title {
       font-family: var(--mono);
-      font-size: 9px; font-weight: 500;
+      font-size: 11px; font-weight: 500;
       letter-spacing: 0.14em; text-transform: uppercase;
       color: var(--ink4);
       padding-bottom: 10px;
@@ -310,10 +310,10 @@ export const GlobalStyles = () => (
     }
     .data-row:last-child { border-bottom: none; }
     .data-label {
-      font-size: 11px; color: var(--ink3); flex: 1;
+      font-size: 13px; color: var(--ink3); flex: 1;
     }
     .data-value {
-      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      font-family: var(--mono); font-size: 13px; font-weight: 500;
       color: var(--ink); text-align: right;
     }
 
@@ -331,7 +331,7 @@ export const GlobalStyles = () => (
 
     /* ── Tab button ──────────────────────────────────────── */
     .tab-btn {
-      font-size: 12px; font-weight: 500;
+      font-size: 14px; font-weight: 500;
       color: var(--ink3);
       padding: 6px 12px;
       border-radius: var(--radius-sm);
@@ -350,10 +350,10 @@ export const GlobalStyles = () => (
     /* ── Input ───────────────────────────────────────────── */
     .search-input {
       width: 100%; padding: 0 12px;
-      height: 34px;
+      height: 38px;
       background: transparent;
       border: none;
-      font-size: 13px; color: var(--ink);
+      font-size: 15px; color: var(--ink);
       font-family: var(--sans);
       outline: none;
     }
@@ -368,7 +368,7 @@ export const GlobalStyles = () => (
       padding: 3px;
     }
     .seg-btn {
-      font-family: var(--mono); font-size: 10px; font-weight: 500;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
       letter-spacing: 0.06em; text-transform: uppercase;
       padding: 4px 10px; border-radius: 4px;
       border: none; cursor: pointer; background: transparent;
@@ -393,13 +393,13 @@ export const GlobalStyles = () => (
     /* ── Table ───────────────────────────────────────────── */
     .aq-table { width: 100%; border-collapse: collapse; }
     .aq-table th {
-      font-family: var(--mono); font-size: 9px; font-weight: 500;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
       letter-spacing: 0.12em; text-transform: uppercase;
       color: var(--ink4); padding: 0 12px 10px;
       border-bottom: 1px solid var(--border); text-align: left;
     }
     .aq-table td {
-      font-size: 12px; padding: 10px 12px;
+      font-size: 14px; padding: 10px 12px;
       border-bottom: 1px solid var(--border);
     }
     .aq-table tr:last-child td { border-bottom: none; }
@@ -417,7 +417,7 @@ export const GlobalStyles = () => (
     .chip {
       display: inline-flex; align-items: center; gap: 5px;
       padding: 3px 9px; border-radius: 20px;
-      font-size: 11px; font-weight: 500;
+      font-size: 13px; font-weight: 500;
       background: var(--surface3);
       border: 1px solid var(--border);
       color: var(--ink2);

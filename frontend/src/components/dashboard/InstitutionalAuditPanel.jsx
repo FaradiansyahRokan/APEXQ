@@ -25,7 +25,7 @@ const VerdictChip = ({ verdict }) => {
 
 const PassFail = ({ ok, label, detail }) => (
   <div style={{ display:"flex",alignItems:"baseline",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,.05)" }}>
-    <span style={{ color:ok?GN:RD,fontFamily:MN,fontSize:11,flexShrink:0 }}>{ok?"✓":"✗"}</span>
+    <span style={{ color:ok?GN:RD,fontFamily:MN,fontSize:11,flexShrink:0 }}>{ok?"":""}</span>
     <span style={{ fontFamily:MN,fontSize:10,color:"var(--ink2)",flex:1 }}>{label}</span>
     <span style={{ fontFamily:MN,fontSize:10,color:ok?GN:RD }}>{detail}</span>
   </div>
@@ -255,12 +255,12 @@ export default function InstitutionalAuditPanel() {
                 </div>
                 {risk.fat_tail_present && (
                   <div style={{ padding:"8px 12px",borderRadius:6,background:"rgba(244,63,94,.08)",border:"1px solid rgba(244,63,94,.2)",fontFamily:MN,fontSize:9,color:RD,marginBottom:8 }}>
-                    ⚠️ Fat-tail detected (excess kurtosis = {risk.excess_kurtosis?.toFixed(2)}). Gaussian VaR understates risk 30-50%. Use Cornish-Fisher CVaR above.
+                     Fat-tail detected (excess kurtosis = {risk.excess_kurtosis?.toFixed(2)}). Gaussian VaR understates risk 30-50%. Use Cornish-Fisher CVaR above.
                   </div>
                 )}
                 {risk.negative_skew_warning && (
                   <div style={{ padding:"8px 12px",borderRadius:6,background:"rgba(245,158,11,.08)",border:"1px solid rgba(245,158,11,.2)",fontFamily:MN,fontSize:9,color:AM }}>
-                    ⚠️ Negative skew ({risk.skewness?.toFixed(2)}). Strategy has asymmetric downside. Check for short-gamma/short-vol exposure.
+                     Negative skew ({risk.skewness?.toFixed(2)}). Strategy has asymmetric downside. Check for short-gamma/short-vol exposure.
                   </div>
                 )}
               </div>

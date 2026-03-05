@@ -27,28 +27,28 @@
 ║    from apex_engine_v6 import *  (semua fungsi yang sama tersedia)          ║
 ║                                                                              ║
 ║  TETAP TIDAK BERUBAH:                                                        ║
-║    ✓ app/collectors/  — semua collector                                      ║
-║    ✓ app/models/      — ai_analyzer, price_analyzer                          ║
-║    ✓ app/engine/portfolio_simulator.py — tetap dipakai sendiri               ║
-║    ✓ Semua endpoint URL — tidak ada yang berubah                             ║
-║    ✓ sanitize_data, exception handler, CORS                                  ║
+║     app/collectors/  — semua collector                                      ║
+║     app/models/      — ai_analyzer, price_analyzer                          ║
+║     app/engine/portfolio_simulator.py — tetap dipakai sendiri               ║
+║     Semua endpoint URL — tidak ada yang berubah                             ║
+║     sanitize_data, exception handler, CORS                                  ║
 ║                                                                              ║
 ║  FILE YANG BOLEH DIHAPUS dari app/engine/:                                   ║
-║    ✗ quant_engine.py                                                         ║
-║    ✗ kelly_engine.py                                                         ║
-║    ✗ stats_engine.py                                                         ║
-║    ✗ ict_engine.py                                                           ║
-║    ✗ risk_manager.py                                                         ║
-║    ✗ macro_engine.py                                                         ║
-║    ✗ regime_engine.py                                                        ║
-║    ✗ factor_engine.py                                                        ║
-║    ✗ scenario_engine.py                                                      ║
-║    ✗ model_confidence_engine.py                                              ║
-║    ✗ data_quality_engine.py                                                  ║
-║    ✗ screener_engine.py                                                      ║
-║    ✗ apex_systematic_trader.py                                               ║
-║    ✗ apex_quant_fund.py                                                      ║
-║    ✗ apex_institutional_architect.py                                         ║
+║     quant_engine.py                                                         ║
+║     kelly_engine.py                                                         ║
+║     stats_engine.py                                                         ║
+║     ict_engine.py                                                           ║
+║     risk_manager.py                                                         ║
+║     macro_engine.py                                                         ║
+║     regime_engine.py                                                        ║
+║     factor_engine.py                                                        ║
+║     scenario_engine.py                                                      ║
+║     model_confidence_engine.py                                              ║
+║     data_quality_engine.py                                                  ║
+║     screener_engine.py                                                      ║
+║     apex_systematic_trader.py                                               ║
+║     apex_quant_fund.py                                                      ║
+║     apex_institutional_architect.py                                         ║
 ║                                                                              ║
 ║  CARA JALANKAN:                                                              ║
 ║    uvicorn main:app --reload --port 8001                                     ║
@@ -790,7 +790,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler — pastikan CORS header ada di error 500."""
     error_msg   = str(exc)
     stack_trace = traceback.format_exc()
-    print(f"🛑 GLOBAL ERROR: {error_msg}")
+    print(f" GLOBAL ERROR: {error_msg}")
     print(stack_trace)
     response = JSONResponse(
         status_code = 500,
@@ -848,22 +848,22 @@ def _fetch_crypto_df(ticker: str, tf: str = "1D"):
     try:
         df, chart_data, price, profile = get_hl_crypto_data(ticker, tf)
         if df is not None and not df.empty and chart_data:
-            print(f"✅ [CRYPTO] {ticker} → Hyperliquid ({len(chart_data)} candles)")
+            print(f" [CRYPTO] {ticker} → Hyperliquid ({len(chart_data)} candles)")
             return df, chart_data, price, profile
     except Exception as e:
-        print(f"⚠️  [CRYPTO] {ticker} → Hyperliquid error: {e}")
+        print(f"  [CRYPTO] {ticker} → Hyperliquid error: {e}")
 
     # 2. Fallback ke Binance
     try:
         df, chart_data, price, profile = get_binance_crypto_data(ticker, tf)
         if df is not None and not df.empty and chart_data:
-            print(f"✅ [CRYPTO] {ticker} → Binance ({len(chart_data)} candles)")
+            print(f" [CRYPTO] {ticker} → Binance ({len(chart_data)} candles)")
             return df, chart_data, price, profile
     except Exception as e:
-        print(f"⚠️  [CRYPTO] {ticker} → Binance error: {e}")
+        print(f"  [CRYPTO] {ticker} → Binance error: {e}")
 
     # 3. Tidak ada data — return None, JANGAN yfinance
-    print(f"❌ [CRYPTO] {ticker} → No data from Hyperliquid or Binance.")
+    print(f" [CRYPTO] {ticker} → No data from Hyperliquid or Binance.")
     return None, [], 0.0, {
         "full_name": ticker,
         "sector": "Web3 & Crypto",
@@ -1215,7 +1215,7 @@ def data_spoof(ticker: str):
 
 @app.get("/api/apex-institutional/{ticker}")
 def apex_institutional(ticker: str, tf: str = "1D", account_size: float = 30_000):
-    """🏛️ APEX INSTITUTIONAL INTELLIGENCE — semua engine dalam satu call."""
+    """ APEX INSTITUTIONAL INTELLIGENCE — semua engine dalam satu call."""
     is_crypto = _is_crypto(ticker)
     if is_crypto:
         # Crypto → HANYA Hyperliquid atau Binance, tidak pernah yfinance
@@ -1242,7 +1242,7 @@ def apex_institutional(ticker: str, tf: str = "1D", account_size: float = 30_000
         screener = v6_screener_score(df)          # Institutional screener score
         factor   = v6_factor_composite(df)        # Momentum + VRP
     except Exception as e:
-        print(f"⚠️ v6 engine partial failure for {ticker}: {e} — falling back to legacy")
+        print(f" v6 engine partial failure for {ticker}: {e} — falling back to legacy")
         quant    = calculate_quant_metrics(df, ticker)
         tech     = {}
         ict      = get_ict_full_analysis(df)
@@ -1691,8 +1691,8 @@ def v2_sharpe_analysis(ticker: str, n_trials: int = 1):
         "lo_adjusted"    : lo_adjusted_sharpe(log_r),
         "deflated_sharpe": deflated_sharpe_ratio(raw_sr, n_trials, n, log_r),
         "bootstrap_ci"   : bootstrap_sharpe_ci(log_r, n_bootstrap=5_000),
-        "verdict": ("✅ Sharpe statistically credible." if raw_sr >= 1.5 and n >= 200
-                    else f"⚠️ SR={raw_sr:.2f} — Check DSR and bootstrap CI before trusting."),
+        "verdict": (" Sharpe statistically credible." if raw_sr >= 1.5 and n >= 200
+                    else f" SR={raw_sr:.2f} — Check DSR and bootstrap CI before trusting."),
     }
     return sanitize_data(result)
 
@@ -2519,7 +2519,7 @@ def armor_monte_carlo(req: ArmorMonteCarloRequest):
     - floor breach count, survival rate
     - armor benefit metrics (ruin reduction %, MDD reduction %, return cost %)
 
-    ⚠️  Runs in ~3–8 seconds depending on n_simulations.
+      Runs in ~3–8 seconds depending on n_simulations.
     """
     result = run_armored_monte_carlo(
         win_rate=req.win_rate,
@@ -2564,8 +2564,8 @@ def armor_report(session_id: str = "default"):
 
     Includes:
     - Deployment gate audit (ALL must pass before live trading):
-        ✅ Sharpe ≥ 2.0 | ✅ Max DD ≤ 20% | ✅ Calmar ≥ 1.5
-        ✅ System ACTIVE | ✅ Edge INTACT
+         Sharpe ≥ 2.0 |  Max DD ≤ 20% |  Calmar ≥ 1.5
+         System ACTIVE |  Edge INTACT
     - Mathematical constraint feasibility audit
     - Monte Carlo summary (armored vs unarmored)
     - All stress scenario results

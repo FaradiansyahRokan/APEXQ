@@ -601,9 +601,9 @@ class ValidationSuite:
             "deployment_gate_pass"       : gate_pass,
             "deployment_gate_checks"     : gate_checks,
             "recommendation": (
-                "✅ DEPLOY — strategi lulus semua gate statistik"
+                " DEPLOY — strategi lulus semua gate statistik"
                 if gate_pass
-                else "❌ DO NOT DEPLOY — gagal satu atau lebih gate. Lihat gate_checks."
+                else " DO NOT DEPLOY — gagal satu atau lebih gate. Lihat gate_checks."
             ),
         }
 

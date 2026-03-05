@@ -454,7 +454,7 @@ export default function Screener({ onAnalyze }) {
           borderRadius: 10,
         }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--red)' }}>
-            ⛔ {error}
+             {error}
           </span>
         </div>
       )}
@@ -517,7 +517,7 @@ export default function Screener({ onAnalyze }) {
               color="var(--gold)"
             />
             <CountPill
-              icon="🔴"
+              icon=""
               count={result.summary.rejected_count}
               label="Rejected"
               color="var(--red)"

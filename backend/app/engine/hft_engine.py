@@ -587,7 +587,7 @@ class HFTPredator:
         self.running = True
         self.stats.reset()
         self.stats.peak_balance = self.balance
-        self._log("ENGINE", "🐆 Predator awakens — microstructure scanner active")
+        self._log("ENGINE", " Predator awakens — microstructure scanner active")
         self._task = asyncio.create_task(self._main_loop())
 
     async def stop(self):
@@ -601,7 +601,7 @@ class HFTPredator:
         for pos in list(self.positions.values()):
             if pos.status == "OPEN":
                 self._close_position(pos, "MANUAL")
-        self._log("ENGINE", "🛑 Predator halted — all positions closed")
+        self._log("ENGINE", " Predator halted — all positions closed")
 
     # ─── MAIN LOOP ───────────────────────────────────────────────
 
@@ -630,7 +630,7 @@ class HFTPredator:
                             self.balance, self.stats.consecutive_losses
                         )
                         if not can_trade:
-                            self._log("CIRCUIT", f"⛔ {cb_reason}")
+                            self._log("CIRCUIT", f" {cb_reason}")
                         else:
                             # 6. Scan entries (hanya jika slot tersedia dan CB OK)
                             if len(self._open_positions()) < self.config.max_positions:
@@ -942,7 +942,7 @@ class HFTPredator:
 
         rr = round(tp_dist / stop_dist, 2) if stop_dist > 0 else 0
         self._log("ENTRY", (
-            f"{'🟢 LONG' if direction == 'LONG' else '🔴 SHORT'} "
+            f"{'🟢 LONG' if direction == 'LONG' else ' SHORT'} "
             f"{coin} @ ${entry_price:,.4f} | "
             f"Stop ${stop_price:,.4f} | TP ${tp_price:,.4f} | "
             f"RR {rr}R | Z={c['z']:+.2f} OFI={c['ofi']:.2f} EV={c['ev_pct']:+.3f}%"
@@ -1008,7 +1008,7 @@ class HFTPredator:
         self._last_trade_ts[pos.coin] = time.time()   # cooldown timer mulai
         del self.positions[pos.id]
 
-        emoji = "✅" if net_pnl > 0 else "❌"
+        emoji = "" if net_pnl > 0 else ""
         self._log("EXIT", (
             f"{emoji} {pos.direction} {pos.coin} [{reason}] "
             f"@ ${exit_price:,.4f} | "

@@ -5,21 +5,21 @@
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  CHANGELOG v4.0 — AUDIT FIX (3 Structural Killers Addressed):       ║
 ║                                                                      ║
-║  🔴 CRITICAL FIX 1: RSI Anti-Signal REMOVED from quality score      ║
+║   CRITICAL FIX 1: RSI Anti-Signal REMOVED from quality score      ║
 ║     - Audit showed RSI confirmation REDUCES win rate by 10.4%       ║
 ║     - root cause: RSI 35-72 "ok" range selects mid-trend entries    ║
 ║       that are statistically EXHAUSTED, not "healthy"               ║
 ║     - Replaced with: Z-Score discount factor (anti-overbought)      ║
 ║       → +5 pts if z-score < 0.5 (price not extended)               ║
 ║                                                                      ║
-║  🔴 CRITICAL FIX 2: Volume anti-signal REMOVED from quality score   ║
+║   CRITICAL FIX 2: Volume anti-signal REMOVED from quality score   ║
 ║     - Audit showed volume confirmation REDUCES win rate by 8.5%     ║
 ║     - root cause: vol_ratio >= 0.9 captures distribution/exhaustion ║
 ║       candles where institutions EXIT not enter                     ║
 ║     - Replaced with: Momentum moderation filter                     ║
 ║       → +5 pts if momentum NOT too extended (avoids chasing)        ║
 ║                                                                      ║
-║  🔴 CRITICAL FIX 3: Quality Inversion BUG                           ║
+║   CRITICAL FIX 3: Quality Inversion BUG                           ║
 ║     - A+ quality (90-100) produced 0% win rate (backwards!)         ║
 ║     - Root cause: old formula rewarded RSI+vol anti-signals which   ║
 ║       fired most frequently in overbought/exhaustion conditions     ║
@@ -45,78 +45,78 @@
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  CHANGELOG v3.1 (Profitability Fixes):                               ║
 ║                                                                      ║
-║  ✅ FIX: ICT Strength normalization (_normalize_ict_strength)         ║
+║   FIX: ICT Strength normalization (_normalize_ict_strength)         ║
 ║     - Engine return "3/4" ratio format, bukan "STRONG" enum          ║
 ║     - Sekarang di-normalize: 3/4 → STRONG, 4/4 → VERY_STRONG        ║
 ║     - Fix "Strong ICT Entries = 0" bug                               ║
 ║                                                                      ║
-║  ✅ FIX: Dynamic TP threshold diturunkan (3R sekarang bisa aktif)     ║
+║   FIX: Dynamic TP threshold diturunkan (3R sekarang bisa aktif)     ║
 ║     - score >= 4 → 3R (sebelumnya >= 6, terlalu ketat)              ║
 ║     - Hapus 1.6R conservative (data: 1.6R WR < 2R WR)              ║
 ║     - ADX threshold: 30 → 25, momentum ROC: 0.5% → 0.3%            ║
 ║                                                                      ║
 ║  [Semua fix dari v3.0 tetap berlaku]                                 ║
 ║                                                                      ║
-║  ✅ FIX: Quality Score recalibrated — A+ sekarang bisa dicapai       ║
+║   FIX: Quality Score recalibrated — A+ sekarang bisa dicapai       ║
 ║     - Normalisasi screener: baseline 50 (bukan 0) → skor lebih fair  ║
 ║     - ICT bobot dikurangi dari 30 → 20 pts                           ║
 ║     - 4 tech confirmation slots masing-masing 5 pts                  ║
 ║                                                                      ║
-║  ✅ NEW: Technical Fast Calculator (_calculate_technicals_fast)       ║
+║   NEW: Technical Fast Calculator (_calculate_technicals_fast)       ║
 ║     - EMA 20/50 trend alignment → bonus quality + win rate filter    ║
 ║     - RSI optimal range (35-72 long, 28-65 short) → avoid exhaustion ║
 ║     - Volume ratio confirmation (≥0.9× avg) → liquidity check       ║
 ║     - ADX trending check (≥20) → hanya masuk saat ada trend         ║
 ║                                                                      ║
-║  ✅ NEW: Dynamic TP Multiplier (_compute_dynamic_tp_multiplier)       ║
+║   NEW: Dynamic TP Multiplier (_compute_dynamic_tp_multiplier)       ║
 ║     - Trend kuat (ADX≥30 + EMA aligned + momentum) → TP 3R          ║
 ║     - Normal → TP 2R (default)                                       ║
 ║     - Lemah/chop → TP 1.6R (konservatif)                            ║
 ║                                                                      ║
-║  ✅ NEW: Dynamic SL Multiplier                                        ║
+║   NEW: Dynamic SL Multiplier                                        ║
 ║     - ATR dalam percentile tinggi (>80) → SL lebih lebar ×1.2       ║
 ║     - ATR rendah (<25) → SL lebih ketat ×0.9                        ║
 ║                                                                      ║
-║  ✅ NEW: Counter-trend penalty in quality score                       ║
+║   NEW: Counter-trend penalty in quality score                       ║
 ║     - Signal berlawanan EMA alignment → -8 pts quality              ║
 ║                                                                      ║
 ║  [Semua fix dari v2.0 tetap berlaku]                                 ║
 ║                                                                      ║
-║  🔴 BUG FIX: Balance double-counting eliminated                      ║
+║   BUG FIX: Balance double-counting eliminated                      ║
 ║     - PnL sekarang HANYA diterapkan saat posisi benar-benar tutup   ║
 ║     - trade.balance_after dihitung ulang saat close, bukan saat open ║
 ║                                                                      ║
-║  🔴 BUG FIX: Commission calculation diperbaiki                       ║
+║   BUG FIX: Commission calculation diperbaiki                       ║
 ║     - Sebelumnya: commission = balance × pct (SALAH!)               ║
 ║     - Sekarang: commission = units × entry × pct (BENAR)            ║
 ║                                                                      ║
-║  🔴 BUG FIX: Sharpe/Sortino annualization diperbaiki                 ║
+║   BUG FIX: Sharpe/Sortino annualization diperbaiki                 ║
 ║     - Menggunakan daily equity returns, bukan per-trade pnl          ║
 ║                                                                      ║
-║  ✅ UPGRADE: Kelly-Adaptive Position Sizing                          ║
+║   UPGRADE: Kelly-Adaptive Position Sizing                          ║
 ║     - Setelah 15 trade, Kelly dihitung dari rolling history          ║
 ║     - risk_per_trade disesuaikan secara dinamis dengan Kelly frac    ║
 ║                                                                      ║
-║  ✅ UPGRADE: 3-Layer Confirmation Gate                               ║
+║   UPGRADE: 3-Layer Confirmation Gate                               ║
 ║     - Layer 1: Screener Score ≥ min_screener_score                  ║
 ║     - Layer 2: HMM Regime confidence ≥ 55%                          ║
 ║     - Layer 3: ICT bias_strength ≥ MODERATE                         ║
 ║     - Semua harus lulus → jika tidak, trade DIBLOKIR                ║
 ║                                                                      ║
-║  ✅ UPGRADE: Regime-Dynamic Size Scaling                             ║
+║   UPGRADE: Regime-Dynamic Size Scaling                             ║
 ║     - LOW_VOL_BULLISH  → 100% dari risk target                      ║
 ║     - SIDEWAYS_CHOP    → 60% dari risk target (hati-hati)           ║
 ║     - HIGH_VOL_BEARISH → SKIP (tidak masuk sama sekali)             ║
 ║                                                                      ║
-║  ✅ UPGRADE: Consecutive-Loss Drawdown Guard                         ║
+║   UPGRADE: Consecutive-Loss Drawdown Guard                         ║
 ║     - Setelah 3 loss berturut: ukuran posisi dikurangi 50%          ║
 ║     - Reset saat pertama kali profit kembali                         ║
 ║                                                                      ║
-║  ✅ UPGRADE: Partial Profit Lock at 1.5R                             ║
+║   UPGRADE: Partial Profit Lock at 1.5R                             ║
 ║     - Pada 1R: SL dipindah ke Break Even                            ║
 ║     - Pada 1.5R: booking 50% profit, trail sisanya                  ║
 ║                                                                      ║
-║  ✅ UPGRADE: Equity Curve dari Daily Close, bukan trade-event        ║
+║   UPGRADE: Equity Curve dari Daily Close, bukan trade-event        ║
 ║     - Interpolasi harian → grafik equity lebih smooth dan realistis ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """
@@ -288,10 +288,10 @@ class WalkForwardResult:
 #    • IDX     → IDX official API, sorted by market cap + trading frequency
 #
 #  Features:
-#    ✅ Zero manual input — auto-discover top liquid tickers
-#    ✅ Auto-remove delisted / dead-volume assets
-#    ✅ TTL cache 6 jam — tidak spam API setiap scan
-#    ✅ Fallback ke hardcoded list jika semua API mati
+#     Zero manual input — auto-discover top liquid tickers
+#     Auto-remove delisted / dead-volume assets
+#     TTL cache 6 jam — tidak spam API setiap scan
+#     Fallback ke hardcoded list jika semua API mati
 #
 #  Untuk override manual (misal testing), set env var:
 #    APEX_USE_STATIC_UNIVERSE=1  → pakai fallback hardcoded di bawah
@@ -305,7 +305,7 @@ try:
     _use_static = os.environ.get("APEX_USE_STATIC_UNIVERSE", "0") == "1"
 
     if _use_static:
-        print("⚠️  [UNIVERSE] APEX_USE_STATIC_UNIVERSE=1 — using hardcoded fallback")
+        print("  [UNIVERSE] APEX_USE_STATIC_UNIVERSE=1 — using hardcoded fallback")
         raise ImportError("Forced static mode")
 
     # Build dynamic universe (auto-cached, hanya hit API sekali per 6 jam)
@@ -319,13 +319,13 @@ try:
         min_crypto_vol  = 5_000_000,  # Min $5M/day volume untuk crypto
         verbose         = True,
     )
-    print(f"✅ [UNIVERSE] Dynamic universe loaded: {sum(len(v) for v in WATCHLISTS.values())} total ticker-slots")
+    print(f" [UNIVERSE] Dynamic universe loaded: {sum(len(v) for v in WATCHLISTS.values())} total ticker-slots")
 
     # Optional: pasang scheduler untuk auto-refresh background (uncomment jika perlu)
     # _universe_scheduler = UniverseRefreshScheduler(refresh_hours=6)
 
 except Exception as _universe_err:
-    print(f"⚠️  [UNIVERSE] Dynamic fetch failed ({_universe_err}). Using static fallback.")
+    print(f"  [UNIVERSE] Dynamic fetch failed ({_universe_err}). Using static fallback.")
 
     # ── STATIC FALLBACK (jika API mati / offline mode) ────────────────────
     # List ini dipertahankan sebagai safety net, tapi TIDAK dipakai saat API up.
@@ -415,21 +415,21 @@ def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optio
             lookback_days = (datetime.now() - start).days + 2
             clean_coin = ticker.replace("-USD", "").replace("USDT", "").upper()
             
-            print(f"🔄 [SIMULATOR] Fetching {ticker} from Hyperliquid (Lookback: {lookback_days} days)...")
+            print(f" [SIMULATOR] Fetching {ticker} from Hyperliquid (Lookback: {lookback_days} days)...")
             df_hl = get_hl_klines(clean_coin, interval="1d", lookback_days=lookback_days)
             
             if df_hl is not None and not df_hl.empty:
                 # Filter range yang diminta user
                 df_filtered = df_hl[(df_hl.index >= start) & (df_hl.index <= end)]
                 if len(df_filtered) > 10:  # Minimal ada data yang cukup
-                    print(f"✅ [SIMULATOR] {ticker} data fetched from Hyperliquid L1.")
+                    print(f" [SIMULATOR] {ticker} data fetched from Hyperliquid L1.")
                     return df_filtered.dropna(subset=["Close"])
         except Exception as e:
-            print(f"⚠️ Hyperliquid fetch error for {ticker}: {e}")
+            print(f" Hyperliquid fetch error for {ticker}: {e}")
 
         # ── 2. BINANCE (API) ─────────────────────────────────────
         try:
-            print(f"🔄 [SIMULATOR] Fetching {ticker} from Binance...")
+            print(f" [SIMULATOR] Fetching {ticker} from Binance...")
             # get_binance_crypto_data sudah punya internal filter limit=300
             df_bn, _, _, _ = get_binance_crypto_data(ticker, tf="1D")
             
@@ -440,21 +440,21 @@ def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optio
                     
                 df_filtered = df_bn[(df_bn.index >= start) & (df_bn.index <= end)]
                 if len(df_filtered) > 10:
-                    print(f"✅ [SIMULATOR] {ticker} data fetched from Binance API.")
+                    print(f" [SIMULATOR] {ticker} data fetched from Binance API.")
                     return df_filtered.dropna(subset=["Close"])
         except Exception as e:
-            print(f"⚠️ Binance fetch error for {ticker}: {e}")
+            print(f" Binance fetch error for {ticker}: {e}")
 
         # ── Crypto: kedua sumber gagal → return None (jangan pakai yfinance) ──
         # yfinance tidak support format -USD untuk crypto perpetual dengan baik.
-        print(f"❌ [SIMULATOR] {ticker}: Hyperliquid & Binance both failed. Skipping.")
+        print(f" [SIMULATOR] {ticker}: Hyperliquid & Binance both failed. Skipping.")
         return None
 
     # ── 3. YFINANCE (Stocks & ETFs only — crypto TIDAK sampai sini) ─
     for attempt in range(3):
         try:
             if attempt > 0: time.sleep(0.5)
-            print(f"🔄 [SIMULATOR] Fetching {ticker} from yfinance (Attempt {attempt+1})...")
+            print(f" [SIMULATOR] Fetching {ticker} from yfinance (Attempt {attempt+1})...")
             
             df = yf.download(
                 ticker,
@@ -475,11 +475,11 @@ def _fetch_historical_data(ticker: str, start: datetime, end: datetime) -> Optio
             if not required_cols.issubset(df.columns):
                 continue
                 
-            print(f"✅ [SIMULATOR] {ticker} data fetched from yfinance.")
+            print(f" [SIMULATOR] {ticker} data fetched from yfinance.")
             return df.dropna(subset=["Close"])
             
         except Exception as e:
-            print(f"⚠️ yfinance fetch error for {ticker}: {e}")
+            print(f" yfinance fetch error for {ticker}: {e}")
             continue
             
     return None
@@ -1269,14 +1269,14 @@ def _simulate_trade(
     
     # [v4.1] Protection against mathematical singularities
     if not np.isfinite(net_pnl):
-        print(f"⚠️  NON-FINITE P&L detected for {ticker}. Resetting to zero.")
+        print(f"  NON-FINITE P&L detected for {ticker}. Resetting to zero.")
         net_pnl = 0.0
         
     pnl_pct       = (net_pnl / max(balance_entry, 1.0)) * 100
     
     # [v4.1] Extreme P&L Guard: Log and cap if P&L > 1000% (unrealistic for this model)
     if abs(pnl_pct) > 1000:
-        print(f"🚨 EXTREME P&L: {ticker} | {direction} | P&L: ${net_pnl:.2f} ({pnl_pct:.1f}%)")
+        print(f" EXTREME P&L: {ticker} | {direction} | P&L: ${net_pnl:.2f} ({pnl_pct:.1f}%)")
         print(f"   Entry: {entry:.4f} | Exit: {exit_price:.4f} | Units: {units_full:.4f} | Bal: ${balance_entry:.2f}")
         # Cap to +/- 100% for safety to prevent total ruin of math stats
         pnl_pct = np.clip(pnl_pct, -100.0, 500.0) 
@@ -1475,9 +1475,9 @@ def _compute_full_analytics_v4(result: SimulationResult) -> Dict:
         "degradation_pct"       : wf.degradation_pct,
         "is_robust"             : wf.is_robust,
         "verdict"               : (
-            "✅ ROBUST: OOS performance within acceptable degradation."
+            " ROBUST: OOS performance within acceptable degradation."
             if wf.is_robust
-            else "❌ NOT ROBUST: OOS performance degraded >30% vs in-sample."
+            else " NOT ROBUST: OOS performance degraded >30% vs in-sample."
         ),
     }
 
@@ -1547,8 +1547,8 @@ def generate_statistical_audit(result: SimulationResult) -> Dict:
     is_significant = p_value < 0.05
 
     significance_verdict = (
-        "✅ STATISTICALLY SIGNIFICANT" if is_significant
-        else f"❌ NOT SIGNIFICANT — {p_value:.1%} chance this edge is random noise"
+        " STATISTICALLY SIGNIFICANT" if is_significant
+        else f" NOT SIGNIFICANT — {p_value:.1%} chance this edge is random noise"
     )
 
     # ── 3. Bootstrap win rate CI (1000 resamples) ────────────────
@@ -1572,8 +1572,8 @@ def generate_statistical_audit(result: SimulationResult) -> Dict:
     hlz_adjusted_p = min(float(norm.sf(z_stat)) * m_tests, 1.0)
 
     hlz_verdict = (
-        "✅ PASSES HLZ correction" if abs(z_stat) >= hlz_min_tstat
-        else f"❌ FAILS HLZ — t-stat {z_stat:.2f} < required {hlz_min_tstat:.2f} "
+        " PASSES HLZ correction" if abs(z_stat) >= hlz_min_tstat
+        else f" FAILS HLZ — t-stat {z_stat:.2f} < required {hlz_min_tstat:.2f} "
              f"(~{m_tests} implicit tests correction)"
     )
 
@@ -1605,9 +1605,9 @@ def generate_statistical_audit(result: SimulationResult) -> Dict:
         quality_inversion_detected = "A+" in worst_bucket
 
     quality_verdict = (
-        "🔴 QUALITY INVERSION STILL PRESENT — A+ trades performing worst! Check signals."
+        " QUALITY INVERSION STILL PRESENT — A+ trades performing worst! Check signals."
         if quality_inversion_detected
-        else "✅ Quality monotonic — higher quality → higher win rate (as expected)"
+        else " Quality monotonic — higher quality → higher win rate (as expected)"
     )
 
     return {
@@ -1627,9 +1627,9 @@ def generate_statistical_audit(result: SimulationResult) -> Dict:
             "estimated_years_to_target"  : years_needed,
             "effect_size_observed"       : round(effect_size, 4),
             "warning"                    : (
-                f"⚠️ Only {n} trades. Need {required_n} for 80% power. "
+                f" Only {n} trades. Need {required_n} for 80% power. "
                 f"~{years_needed:.1f} more years at current pace."
-                if n < required_n else "✅ Sufficient trades for meaningful statistics."
+                if n < required_n else " Sufficient trades for meaningful statistics."
             ),
         },
         "multiple_testing_hlz": {
@@ -1756,9 +1756,9 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 max_drawdown_target       = config.circuit_breaker_dd / 100.0,
             )
             armor = EquityArmor(armor_cfg)
-            print("  ✅ Equity Armor ACTIVE — Milestone floors + trailing stop enabled")
+            print("   Equity Armor ACTIVE — Milestone floors + trailing stop enabled")
         except ImportError:
-            print("  ⚠️  apex_equity_armor not found — using legacy circuit breaker")
+            print("    apex_equity_armor not found — using legacy circuit breaker")
 
     print(f"\n{'='*70}")
     print(f"  QUANTUM PORTFOLIO SIMULATOR v5.0")
@@ -1772,23 +1772,23 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
     print(f"{'='*70}")
 
     # Pre-fetch data
-    print("\n📡 Fetching historical data...")
+    print("\n Fetching historical data...")
     all_data: Dict[str, pd.DataFrame] = {}
     for i, ticker in enumerate(tickers):
         print(f"   [{i+1:2d}/{len(tickers)}] {ticker:15s}", end=" ")
         df = _fetch_historical_data(ticker, start_date, end_date)
         if df is not None and len(df) >= 60:
             all_data[ticker] = df
-            print(f"✓ {len(df)} candles")
+            print(f" {len(df)} candles")
         else:
-            print("✗ Insufficient data")
+            print(" Insufficient data")
 
     if not all_data:
-        print("❌ No valid data. Abort.")
+        print(" No valid data. Abort.")
         return result
 
-    print(f"\n✅ {len(all_data)} tickers loaded.")
-    print(f"\n🔄 Starting v5 simulation loop...\n")
+    print(f"\n {len(all_data)} tickers loaded.")
+    print(f"\n Starting v5 simulation loop...\n")
 
     closed_trades  : List[TradeRecord] = []
     open_positions : List[Dict]        = []
@@ -1866,7 +1866,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             if armor_status.get("system_halted"):
                 reason = armor_status.get("halt_reason", "ARMOR_HALT")
                 ms_data = armor_status.get("milestone", {})
-                print(f"\n   🛡️  ARMOR HALT Week {week_num}: {reason}")
+                print(f"\n     ARMOR HALT Week {week_num}: {reason}")
                 print(f"   Balance: ${balance:,.2f} | Floor: ${ms_data.get('locked_floor_balance', 0):,.2f}\n")
                 result.weekly_snapshots.append(week_snapshot)
                 current_date += timedelta(days=config.scan_interval_days)
@@ -1875,7 +1875,7 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
         else:
             dd_pct = (balance - config.initial_balance) / config.initial_balance * 100
             if dd_pct < -config.circuit_breaker_dd:
-                print(f"\n   🛑 CIRCUIT BREAKER Week {week_num} — DD: {dd_pct:.2f}%")
+                print(f"\n    CIRCUIT BREAKER Week {week_num} — DD: {dd_pct:.2f}%")
                 break
             armor_risk_scale = 1.0
 
@@ -1987,10 +1987,10 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             open_count += 1
             week_snapshot["trades_opened"] += 1
 
-            icon     = "✅" if trade.outcome == "WIN" else "❌" if trade.outcome == "LOSS" else "〰️"
-            mtf_icon = "🎯" if mtf.get("tf_aligned", 0) == 3 else "⚡" if mtf.get("tf_aligned", 0) == 2 else "⚠️"
+            icon     = "" if trade.outcome == "WIN" else "" if trade.outcome == "LOSS" else "〰"
+            mtf_icon = "" if mtf.get("tf_aligned", 0) == 3 else "" if mtf.get("tf_aligned", 0) == 2 else ""
             entry_t  = signal.get("entry_type", "?")[:1]
-            a_icon   = f"🛡️×{armor_risk_scale:.2f}" if armor else ""
+            a_icon   = f"×{armor_risk_scale:.2f}" if armor else ""
             print(f"   Wk{week_num:3d} | {icon} {ticker:10s} {direction:5s} | "
                   f"Q:{quality_score:.0f} | MTF:{mtf_icon}{mtf.get('tf_aligned',0)}/3 | "
                   f"E:{entry_t} | Sz:×{size_scale:.2f} {a_icon} | P&L:${trade.pnl_usd:+7.2f}")

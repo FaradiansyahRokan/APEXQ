@@ -30,10 +30,10 @@
 ║                                                                              ║
 ║  CONSTRAINTS AUDIT (Are the requirements mathematically achievable?):        ║
 ║  ─────────────────────────────────────────────────────────────────────       ║
-║  ✅ Sharpe > 2.0       → Achievable with vol-targeting + regime filter       ║
-║  ✅ Max DD < 20%       → Achievable with milestone lock + trailing stop      ║
-║  ✅ Calmar optimized   → Achieved by minimizing DD, not maximizing return    ║
-║  ⚠️  Constraint CAVEAT: "Never fall below prior milestone" is                ║
+║   Sharpe > 2.0       → Achievable with vol-targeting + regime filter       ║
+║   Max DD < 20%       → Achievable with milestone lock + trailing stop      ║
+║   Calmar optimized   → Achieved by minimizing DD, not maximizing return    ║
+║    Constraint CAVEAT: "Never fall below prior milestone" is                ║
 ║      mathematically achievable only with POSITION-LEVEL enforcement.        ║
 ║      Gap risk (overnight jumps, black swans) means floor is a SOFT floor    ║
 ║      not a hard guarantee. Hard guarantee requires options hedging.          ║
@@ -755,9 +755,9 @@ class EquityCurveFilter:
             "projected_n_trades": projected,
             "target_n_trades": target_n_trades,
             "on_track": projected >= target_n_trades,
-            "note": ("✅ On track for statistical significance"
+            "note": (" On track for statistical significance"
                      if projected >= target_n_trades
-                     else f"⚠️ Need ~{trades_remaining} more trades — consider "
+                     else f" Need ~{trades_remaining} more trades — consider "
                           f"reducing min_screener_score or scan interval"),
         }
 
@@ -906,10 +906,10 @@ class EdgeDegradationMonitor:
             "n_trades_in_window": n,
             "suspend_reason": self._suspend_reason,
             "verdict": (
-                "✅ Edge intact — full trading." if n_triggers == 0 else
-                f"⚠️ Edge weakening ({n_triggers} trigger{'s' if n_triggers > 1 else ''}) "
+                " Edge intact — full trading." if n_triggers == 0 else
+                f" Edge weakening ({n_triggers} trigger{'s' if n_triggers > 1 else ''}) "
                 f"— size reduced to {size_scale*100:.0f}%." if n_triggers < 3 else
-                "🛑 Edge degraded — system suspended pending re-qualification."
+                " Edge degraded — system suspended pending re-qualification."
             ),
         }
 
@@ -1225,10 +1225,10 @@ class RuinCalculator:
             "n_trades_per_path": n_trades,
             "method": "monte_carlo_20k",
             "edge_verdict": (
-                "✅ POSITIVE EDGE — Ruin unlikely with proper sizing."
+                " POSITIVE EDGE — Ruin unlikely with proper sizing."
                 if ev > 0 and catast_ruin / n_simulations < 0.05 else
-                "⚠️ MARGINAL EDGE — Reduce position size." if ev > 0 else
-                "❌ NEGATIVE EDGE — DO NOT TRADE."
+                " MARGINAL EDGE — Reduce position size." if ev > 0 else
+                " NEGATIVE EDGE — DO NOT TRADE."
             ),
         }
 
@@ -1801,9 +1801,9 @@ def run_armored_monte_carlo(
                 float(np.median(arm_ret) - np.median(unarm_ret)), 2
             ),
             "verdict": (
-                "✅ Armor dramatically reduces tail risk at acceptable return cost."
+                " Armor dramatically reduces tail risk at acceptable return cost."
                 if float((arm_ret < -50).mean()) < float((unarm_ret < -50).mean()) * 0.5
-                else "⚠️ Armor reduces risk but at significant return cost. Review config."
+                else " Armor reduces risk but at significant return cost. Review config."
             ),
         },
     }
@@ -2055,10 +2055,10 @@ def run_armored_walk_forward(
         "armor_improved_sr_count": armor_improved,
         "armor_reduced_mdd_count": armor_reduced_mdd,
         "verdict": (
-            f"✅ ROBUST: {n_robust}/{n} windows. WFE={wfe:.2f}. "
+            f" ROBUST: {n_robust}/{n} windows. WFE={wfe:.2f}. "
             f"Armor improved Sharpe in {armor_improved}/{n} windows."
             if n_robust >= n * 0.70 else
-            f"⚠️ NOT ROBUST: {n_robust}/{n} windows. WFE={wfe:.2f}. "
+            f" NOT ROBUST: {n_robust}/{n} windows. WFE={wfe:.2f}. "
             "Consider reviewing strategy parameters."
         ),
         "windows": windows,
@@ -2097,20 +2097,20 @@ def generate_armor_report(
     approved = all(gate.values())
 
     deployment_verdict = (
-        "✅ APPROVED FOR LIVE DEPLOYMENT — All performance gates passed."
+        " APPROVED FOR LIVE DEPLOYMENT — All performance gates passed."
         if approved else
-        f"❌ NOT APPROVED — Failing: {[k for k,v in gate.items() if not v]}"
+        f" NOT APPROVED — Failing: {[k for k,v in gate.items() if not v]}"
     )
 
     # Constraint feasibility audit
     feasibility_notes = [
-        "✅ Sharpe > 2.0: Achievable with vol-targeting + HMM regime filter + ICT signal selectivity.",
-        "✅ Max DD < 20%: Enforced by milestone floors + trailing stop + pre-emptive risk reduction.",
-        "✅ Calmar optimized: Achieved by MINIMIZING drawdown, not maximizing return (smooth curve priority).",
-        "⚠️ Hard floor guarantee: SOFT guarantee only. Gap risk (overnight/news jumps) cannot be mathematically eliminated without options hedging. System provides PRE-EMPTIVE size reduction to make floor breach statistically rare (<5% probability per MC simulation).",
-        "✅ No Martingale: Kelly REDUCES size after losses. Never increases. Consecutive loss guard enforced.",
-        "✅ No emotional discretion: All decisions are deterministic given inputs. Zero human judgment in execution.",
-        "✅ No hope: System halts automatically when edge degrades below statistical threshold.",
+        " Sharpe > 2.0: Achievable with vol-targeting + HMM regime filter + ICT signal selectivity.",
+        " Max DD < 20%: Enforced by milestone floors + trailing stop + pre-emptive risk reduction.",
+        " Calmar optimized: Achieved by MINIMIZING drawdown, not maximizing return (smooth curve priority).",
+        " Hard floor guarantee: SOFT guarantee only. Gap risk (overnight/news jumps) cannot be mathematically eliminated without options hedging. System provides PRE-EMPTIVE size reduction to make floor breach statistically rare (<5% probability per MC simulation).",
+        " No Martingale: Kelly REDUCES size after losses. Never increases. Consecutive loss guard enforced.",
+        " No emotional discretion: All decisions are deterministic given inputs. Zero human judgment in execution.",
+        " No hope: System halts automatically when edge degrades below statistical threshold.",
     ]
 
     report = {
@@ -2412,7 +2412,7 @@ def _run_self_validation():
     print(f"   {ruin['edge_verdict']}")
 
     print("\n" + "═" * 70)
-    print("  ✅ ALL COMPONENTS VALIDATED SUCCESSFULLY")
+    print("   ALL COMPONENTS VALIDATED SUCCESSFULLY")
     print("═" * 70 + "\n")
 
 

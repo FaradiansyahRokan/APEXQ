@@ -55,7 +55,7 @@ def get_smart_news(ticker, full_name):
         return formatted_news
     
     except Exception as e:
-        print(f"🚨 [NEWS ENGINE] Error fetching news for {ticker}: {str(e)}")
+        print(f" [NEWS ENGINE] Error fetching news for {ticker}: {str(e)}")
         return []
 
 def get_global_market_news():
@@ -76,5 +76,5 @@ def get_global_market_news():
         return news_list
         
     except Exception as e:
-        print(f"🚨 [NEWS ENGINE] Global News Error: {str(e)}")
+        print(f" [NEWS ENGINE] Global News Error: {str(e)}")
         return []

@@ -4,10 +4,10 @@
 ║   Live Screener · Zero Manual Input · Self-Cleaning Watchlists      ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  v1.1 FIXES:                                                         ║
-║  ✅ SSL verify=False  (corporate proxy / firewall workaround)        ║
-║  ✅ Wikipedia tanpa lxml  (html.parser / bs4 / regex fallback)       ║
-║  ✅ IDX multi-endpoint  (3 URL dicoba + yfinance seed fallback)      ║
-║  ✅ Hardcoded fallback lengkap jika SEMUA sumber gagal               ║
+║   SSL verify=False  (corporate proxy / firewall workaround)        ║
+║   Wikipedia tanpa lxml  (html.parser / bs4 / regex fallback)       ║
+║   IDX multi-endpoint  (3 URL dicoba + yfinance seed fallback)      ║
+║   Hardcoded fallback lengkap jika SEMUA sumber gagal               ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """
 
@@ -61,10 +61,10 @@ _COIN_CAT = {c: cat for cat, coins in _CRYPTO_CATS.items() for c in coins}
 def _fetch_binance_top_crypto(top_n=20, min_vol=5_000_000):
     key = "binance_univ"
     if _is_cache_valid(key):
-        print("📦 [UNIVERSE] Crypto from cache.")
+        print(" [UNIVERSE] Crypto from cache.")
         return _get_cache(key)
 
-    print("🔄 [UNIVERSE] Fetching crypto from Binance...")
+    print(" [UNIVERSE] Fetching crypto from Binance...")
     try:
         r = _SESSION.get("https://api.binance.com/api/v3/ticker/24hr", timeout=15)
         r.raise_for_status()
@@ -78,7 +78,7 @@ def _fetch_binance_top_crypto(top_n=20, min_vol=5_000_000):
             if vol < min_vol: continue
             pairs.append({"coin": coin, "vol": vol})
         pairs.sort(key=lambda x: x["vol"], reverse=True)
-        print(f"   ✅ Binance: {len(pairs)} valid pairs")
+        print(f"    Binance: {len(pairs)} valid pairs")
 
         result = {cat: [] for cat in _CRYPTO_CATS}
         result["CRYPTO_TOP_VOLUME"] = []
@@ -94,7 +94,7 @@ def _fetch_binance_top_crypto(top_n=20, min_vol=5_000_000):
         _set_cache(key, result)
         return result
     except Exception as e:
-        print(f"⚠️ [UNIVERSE] Binance failed: {e}. Using hardcoded.")
+        print(f" [UNIVERSE] Binance failed: {e}. Using hardcoded.")
         return _hardcoded_crypto()
 
 
@@ -104,11 +104,11 @@ def _fetch_hl_perps():
     try:
         r = _SESSION.post("https://api.hyperliquid.xyz/info", json={"type": "meta"}, timeout=10)
         coins = [u["name"] for u in r.json().get("universe", []) if u.get("name") and u["name"] not in _BLACKLIST]
-        print(f"   ✅ Hyperliquid: {len(coins)} perp markets")
+        print(f"    Hyperliquid: {len(coins)} perp markets")
         _set_cache(key, coins)
         return coins
     except Exception as e:
-        print(f"⚠️ [UNIVERSE] Hyperliquid failed: {e}")
+        print(f" [UNIVERSE] Hyperliquid failed: {e}")
         return []
 
 
@@ -118,7 +118,7 @@ def _get_crypto_universe(top_n=25, min_vol=5_000_000):
     if hl:
         confirmed = [t for t in result.get("CRYPTO_TOP_VOLUME", []) if t.replace("-USD","") in hl]
         result["CRYPTO_HL_CONFIRMED"] = confirmed
-        print(f"   ✅ HL-confirmed: {len(confirmed)} coins")
+        print(f"    HL-confirmed: {len(confirmed)} coins")
     return result
 
 # ══════════════════════════════════════════════════════════════════
@@ -157,15 +157,15 @@ def _scrape_wiki_tickers(url, col_hints):
 def _fetch_sp500():
     key = "sp500"
     if _is_cache_valid(key): return _get_cache(key)
-    print("🔄 [UNIVERSE] Fetching S&P 500 from Wikipedia...")
+    print(" [UNIVERSE] Fetching S&P 500 from Wikipedia...")
     tickers = _scrape_wiki_tickers(
         "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
         ["Symbol","Ticker"]
     )
     if len(tickers) < 100:
-        print("   ⚠️  Wikipedia parse thin — using curated SP500 top 150")
+        print("     Wikipedia parse thin — using curated SP500 top 150")
         tickers = _sp500_hardcoded()
-    print(f"   ✅ S&P 500: {len(tickers)} tickers")
+    print(f"    S&P 500: {len(tickers)} tickers")
     _set_cache(key, tickers)
     return tickers
 
@@ -173,14 +173,14 @@ def _fetch_sp500():
 def _fetch_ndx100():
     key = "ndx100"
     if _is_cache_valid(key): return _get_cache(key)
-    print("🔄 [UNIVERSE] Fetching Nasdaq 100 from Wikipedia...")
+    print(" [UNIVERSE] Fetching Nasdaq 100 from Wikipedia...")
     tickers = _scrape_wiki_tickers(
         "https://en.wikipedia.org/wiki/Nasdaq-100",
         ["Ticker","Symbol"]
     )
     if len(tickers) < 80:
         tickers = _ndx100_hardcoded()
-    print(f"   ✅ Nasdaq 100: {len(tickers)} tickers")
+    print(f"    Nasdaq 100: {len(tickers)} tickers")
     _set_cache(key, tickers)
     return tickers
 
@@ -206,10 +206,10 @@ def _yf_extract(data, ticker, metric):
 def _screen_us(tickers, top_n=60, min_vol=1_000_000):
     key = f"us_{top_n}"
     if _is_cache_valid(key):
-        print("📦 [UNIVERSE] US stocks from cache.")
+        print(" [UNIVERSE] US stocks from cache.")
         return _get_cache(key)
 
-    print(f"🔄 [UNIVERSE] Screening {len(tickers)} US stocks by turnover (top {top_n})...")
+    print(f" [UNIVERSE] Screening {len(tickers)} US stocks by turnover (top {top_n})...")
     scored = []
 
     # Batch kecil 100 — lebih stabil dari 500+ sekaligus
@@ -236,14 +236,14 @@ def _screen_us(tickers, top_n=60, min_vol=1_000_000):
                 except Exception:
                     continue
         except Exception as e:
-            print(f"   ⚠️ Batch {i//batch_size+1} error: {e}")
+            print(f"    Batch {i//batch_size+1} error: {e}")
             continue
         time.sleep(0.2)
 
     scored.sort(key=lambda x: x["to"], reverse=True)
     top = [s["t"] for s in scored[:top_n]]
     if len(top) < 10:
-        print("   ⚠️  Too few results → hardcoded fallback")
+        print("     Too few results → hardcoded fallback")
         return _us_hardcoded()
 
     _MAG7  = {"AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA"}
@@ -259,7 +259,7 @@ def _screen_us(tickers, top_n=60, min_vol=1_000_000):
         "US_TOP_VOLUME"   : top,
         "US"              : top,
     }
-    print(f"   ✅ US screened: {len(top)} stocks")
+    print(f"    US screened: {len(top)} stocks")
     _set_cache(key, result)
     return result
 
@@ -298,10 +298,10 @@ _IDX_URLS = [
 def _fetch_idx(top_n=50):
     key = f"idx_{top_n}"
     if _is_cache_valid(key):
-        print("📦 [UNIVERSE] IDX from cache.")
+        print(" [UNIVERSE] IDX from cache.")
         return _get_cache(key)
 
-    print("🔄 [UNIVERSE] Fetching IDX universe...")
+    print(" [UNIVERSE] Fetching IDX universe...")
     tickers = []
 
     # Try IDX API
@@ -322,19 +322,19 @@ def _fetch_idx(top_n=50):
             scored.sort(key=lambda x: x["sc"], reverse=True)
             tickers = [s["t"] for s in scored[:top_n]]
             if tickers:
-                print(f"   ✅ IDX API: {len(tickers)} tickers")
+                print(f"    IDX API: {len(tickers)} tickers")
                 break
         except Exception:
             continue
 
     # yfinance seed fallback
     if len(tickers) < 10:
-        print("   ⚠️  IDX API unavailable → validating seed list via yfinance...")
+        print("     IDX API unavailable → validating seed list via yfinance...")
         tickers = _screen_idx_yf(_IDX_SEED, top_n)
 
     if not tickers:
         tickers = _IDX_SEED[:top_n]
-        print(f"   ⚠️  Using full seed list: {len(tickers)} tickers")
+        print(f"     Using full seed list: {len(tickers)} tickers")
 
     # Classify
     _BANKING = {"BBCA","BBRI","BMRI","BBNI","BRIS","BTPS","BNGA","BNLI","NISP","MEGA","BBTN","BJBR","BJTM"}
@@ -357,7 +357,7 @@ def _fetch_idx(top_n=50):
         else:               cats["IDX_OTHER"].append(t)
         if i < 20: cats["IDX_BLUECHIP"].append(t)
     cats["IDX"] = tickers
-    print(f"   ✅ IDX ready: {len(tickers)} tickers")
+    print(f"    IDX ready: {len(tickers)} tickers")
     _set_cache(key, cats)
     return cats
 
@@ -389,13 +389,13 @@ def _screen_idx_yf(seed, top_n):
                 except Exception:
                     continue
         except Exception as e:
-            print(f"   ⚠️ IDX batch {i//batch_size+1} error: {e}")
+            print(f"    IDX batch {i//batch_size+1} error: {e}")
             continue
         time.sleep(0.3)
 
     scored.sort(key=lambda x: x["to"], reverse=True)
     result = [s["t"] for s in scored[:top_n]]
-    print(f"   ✅ IDX yfinance screened: {len(result)} tickers")
+    print(f"    IDX yfinance screened: {len(result)} tickers")
     return result
 
 

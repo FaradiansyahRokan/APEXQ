@@ -841,11 +841,11 @@ def score_ticker_from_df(df: pd.DataFrame) -> Dict:
         down    = lr[lr < 0]
         dv      = float(down.std() * np.sqrt(ANN)) if len(down) > 1 else float(lr.std() * np.sqrt(ANN))
         sortino = _safe_div(mu_ann, dv)
-        if sortino >= 1.5:   s_pts, s_lbl = 30.0, f"{sortino:.2f} ✦✦✦"
-        elif sortino >= 1.0: s_pts, s_lbl = 25.0, f"{sortino:.2f} ✦✦"
-        elif sortino >= 0.5: s_pts, s_lbl = 18.0, f"{sortino:.2f} ✦"
+        if sortino >= 1.5:   s_pts, s_lbl = 30.0, f"{sortino:.2f} "
+        elif sortino >= 1.0: s_pts, s_lbl = 25.0, f"{sortino:.2f} "
+        elif sortino >= 0.5: s_pts, s_lbl = 18.0, f"{sortino:.2f} "
         elif sortino >= 0.0: s_pts, s_lbl = 10.0, f"{sortino:.2f} ~"
-        else:                s_pts, s_lbl = 0.0,  f"{sortino:.2f} ✗"
+        else:                s_pts, s_lbl = 0.0,  f"{sortino:.2f} "
 
         # [25] Regime proxy
         recent14 = lr.values[-14:] if len(lr) >= 14 else lr.values
@@ -871,17 +871,17 @@ def score_ticker_from_df(df: pd.DataFrame) -> Dict:
         elif roc20 > 0 and not decel: m_pts, m_lbl = 13.0, f"+{roc20:.1f}% →"
         elif roc20 > -2 and roc5 > 0: m_pts, m_lbl = 8.0, f"{roc20:.1f}% recovering"
         elif decel:                   m_pts, m_lbl = 3.0,  f"{roc20:.1f}% DECAY ↓"
-        else:                         m_pts, m_lbl = 0.0,  f"{roc20:.1f}% ✗"
+        else:                         m_pts, m_lbl = 0.0,  f"{roc20:.1f}% "
 
         # [15] Z-Score anti-overbought
         rm = close.rolling(20).mean().iloc[-1]; rs = close.rolling(20).std().iloc[-1]
         z  = float((close.iloc[-1] - rm) / rs) if rs and not pd.isna(rs) else 0.0
-        if z < -2.0:  z_pts, z_lbl = 15.0, f"Z={z:.2f} OVERSOLD ✦"
+        if z < -2.0:  z_pts, z_lbl = 15.0, f"Z={z:.2f} OVERSOLD "
         elif z < -1.0: z_pts, z_lbl = 13.0, f"Z={z:.2f} DISCOUNTED"
         elif z < 0.5:  z_pts, z_lbl = 12.0, f"Z={z:.2f} FAIR"
         elif z < 1.5:  z_pts, z_lbl = 8.0,  f"Z={z:.2f} EXTENDED"
         elif z < 2.5:  z_pts, z_lbl = 3.0,  f"Z={z:.2f} OVERBOUGHT"
-        else:          z_pts, z_lbl = 0.0,  f"Z={z:.2f} EXTREME ✗"
+        else:          z_pts, z_lbl = 0.0,  f"Z={z:.2f} EXTREME "
 
         # [10] Volatility health
         vol_ann = float(lr.std() * np.sqrt(ANN) * 100)
@@ -893,7 +893,7 @@ def score_ticker_from_df(df: pd.DataFrame) -> Dict:
 
         total = round(s_pts + r_pts + m_pts + z_pts + v_pts, 1)
         status = "SATIN_READY" if total >= 70 else "MARGINAL" if total >= 50 else "REJECTED"
-        tag    = "🟢" if status == "SATIN_READY" else "🟡" if status == "MARGINAL" else "🔴"
+        tag    = "🟢" if status == "SATIN_READY" else "🟡" if status == "MARGINAL" else ""
 
         return {
             "score"     : total, "status": status, "status_tag": tag,
@@ -965,10 +965,10 @@ def calculate_kelly(
     safe  = min(max(frac, 0), max_risk_pct / 100)
     ev    = win_rate * avg_win - lr * avg_loss
 
-    if fk < 0:      edge, verdict = "NO_EDGE",  "❌ NEGATIVE EDGE — Skip trade ini."
-    elif fk < 0.05: edge, verdict = "WEAK",     "⚠️  EDGE LEMAH — Kurangi size drastis."
-    elif fk < 0.15: edge, verdict = "MODERATE", "✅ EDGE SOLID — Gunakan Quarter Kelly."
-    else:           edge, verdict = "STRONG",   "🔥 STRONG EDGE — Tetap pakai Fractional."
+    if fk < 0:      edge, verdict = "NO_EDGE",  " NEGATIVE EDGE — Skip trade ini."
+    elif fk < 0.05: edge, verdict = "WEAK",     "  EDGE LEMAH — Kurangi size drastis."
+    elif fk < 0.15: edge, verdict = "MODERATE", " EDGE SOLID — Gunakan Quarter Kelly."
+    else:           edge, verdict = "STRONG",   " STRONG EDGE — Tetap pakai Fractional."
 
     ruin = _estimate_ruin_probability(win_rate, rr, safe)
 
@@ -1534,9 +1534,9 @@ def calculate_signal_confidence(
     return {
         "signal_confidence_score": round(conf, 2),
         "confidence_label": label, "trade_gate": gate,
-        "gate_description": (f"✅ {conf:.1f}% — Execute" if gate == "OPEN" else
-                             f"⚠️ {conf:.1f}% — Reduce size 50%" if gate == "RESTRICTED" else
-                             f"⛔ {conf:.1f}% — Stand clear"),
+        "gate_description": (f" {conf:.1f}% — Execute" if gate == "OPEN" else
+                             f" {conf:.1f}% — Reduce size 50%" if gate == "RESTRICTED" else
+                             f" {conf:.1f}% — Stand clear"),
     }
 
 
@@ -1661,7 +1661,7 @@ def _detect_revenge_trading() -> Dict:
               and (now - datetime.fromisoformat(t["timestamp"])) <= window]
     ok = len(recent) >= rules["max_losses_in_window"]
     return {"detected": ok, "recent_losses": len(recent),
-            "message": f"⚠️ {len(recent)} losses dalam {rules['revenge_window_min']}m" if ok else "OK"}
+            "message": f" {len(recent)} losses dalam {rules['revenge_window_min']}m" if ok else "OK"}
 
 
 def pre_trade_check(
@@ -1674,7 +1674,7 @@ def pre_trade_check(
 
     if _risk_state["is_locked"]:
         return {"approved": False, "rejections": [_risk_state["lock_reason"]],
-                "satin_msg": f"⛔ LOCKED: {_risk_state['lock_reason']}"}
+                "satin_msg": f" LOCKED: {_risk_state['lock_reason']}"}
 
     bal = _risk_state["account_balance"]
     rules = _risk_state["rules"]
@@ -1707,9 +1707,9 @@ def pre_trade_check(
         rejections.append(_risk_state["lock_reason"])
 
     approved = len(rejections) == 0
-    msg = ("✅ APPROVED — " + " | ".join(warnings_list) if approved and warnings_list
-           else "✅ APPROVED" if approved
-           else "⛔ REJECTED — " + " | ".join(rejections))
+    msg = (" APPROVED — " + " | ".join(warnings_list) if approved and warnings_list
+           else " APPROVED" if approved
+           else " REJECTED — " + " | ".join(rejections))
 
     return {
         "approved": approved, "ticker": ticker, "direction": direction,
@@ -1961,8 +1961,8 @@ def generate_statistical_audit(
                            "hlz_p": round(hlz_p,4), "passes": abs(z_st) >= hlz_min},
         "quality_buckets": bucket_stats,
         "quality_inversion": invert,
-        "quality_verdict": ("⚠️ INVERSION DETECTED — A+ trades performing worst!" if invert
-                            else "✅ Quality monotonic — higher score = higher WR"),
+        "quality_verdict": (" INVERSION DETECTED — A+ trades performing worst!" if invert
+                            else " Quality monotonic — higher score = higher WR"),
     }
 
 
@@ -2225,10 +2225,10 @@ def generate_data_quality_report(df: pd.DataFrame, expected_interval: str = "1D"
 
     composite = tick_sc * 0.30 + clean_sc * 0.40 + exch_sc * 0.30
 
-    if composite >= 85:   label, action = "INSTITUTIONAL_GRADE", "✅ Siap analisis institusional."
-    elif composite >= 65: label, action = "ACCEPTABLE",          "⚠️ Beberapa isu minor."
-    elif composite >= 40: label, action = "MARGINAL",            "⚠️ Perlu cleaning."
-    else:                 label, action = "UNRELIABLE",          "⛔ Jangan gunakan untuk trading."
+    if composite >= 85:   label, action = "INSTITUTIONAL_GRADE", " Siap analisis institusional."
+    elif composite >= 65: label, action = "ACCEPTABLE",          " Beberapa isu minor."
+    elif composite >= 40: label, action = "MARGINAL",            " Perlu cleaning."
+    else:                 label, action = "UNRELIABLE",          " Jangan gunakan untuk trading."
 
     return {
         "composite_quality_score": round(composite, 2),

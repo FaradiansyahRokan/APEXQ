@@ -397,7 +397,7 @@ Tulis satu dari tiga ini dalam HURUF KAPITAL, diikuti 1 kalimat alasan singkat y
         )
 
         if response.status_code != 200:
-            yield f"\n⚠️ SATIN ERROR: Ollama mengembalikan status {response.status_code}. Pastikan Ollama aktif dan model 'deepseek-r1:8b' sudah di-pull.\n"
+            yield f"\n SATIN ERROR: Ollama mengembalikan status {response.status_code}. Pastikan Ollama aktif dan model 'deepseek-r1:8b' sudah di-pull.\n"
             return
 
         for chunk in response.iter_content(chunk_size=1024):
@@ -419,11 +419,11 @@ Tulis satu dari tiga ini dalam HURUF KAPITAL, diikuti 1 kalimat alasan singkat y
                             continue
 
     except requests.exceptions.ConnectionError:
-        yield "\n\n⛔ SATIN CONNECTION ERROR: Gagal terhubung ke Ollama.\n"
+        yield "\n\n SATIN CONNECTION ERROR: Gagal terhubung ke Ollama.\n"
     except requests.exceptions.Timeout:
-        yield "\n\n⛔ SATIN TIMEOUT: Model butuh waktu lebih dari 5 menit untuk berpikir.\n"
+        yield "\n\n SATIN TIMEOUT: Model butuh waktu lebih dari 5 menit untuk berpikir.\n"
     except Exception as e:
-        yield f"\n\n⛔ SATIN INTERNAL ERROR: {str(e)}\n"
+        yield f"\n\n SATIN INTERNAL ERROR: {str(e)}\n"
 
 
 # ─────────────────────────────────────────────────────────────────

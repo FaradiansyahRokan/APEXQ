@@ -41,7 +41,7 @@ export default function AIAnalyst({ ticker, apexData, tf = '1D' }) {
         setAnalysis(clean);
       }
     } catch (e) {
-      setAnalysis('⛔ Connection failed. Ensure Ollama is running (ollama serve).');
+      setAnalysis(' Connection failed. Ensure Ollama is running (ollama serve).');
     } finally {
       setLoading(false);
       setIsThinking(false);

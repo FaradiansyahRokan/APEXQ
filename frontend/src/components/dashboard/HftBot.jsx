@@ -1,8 +1,8 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
  * ║  APEX HFT  ·  v4.0  —  Dual Engine                              ║
- * ║  🕷 Predator  →  mean-reversion VWAP microstructure             ║
- * ║  🐺 Jackal   →  micro-momentum burst scalper                    ║
+ * ║   Predator  →  mean-reversion VWAP microstructure             ║
+ * ║   Jackal   →  micro-momentum burst scalper                    ║
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
@@ -17,7 +17,7 @@ const ENGINES = {
   predator: {
     id       : 'predator',
     name     : 'Predator',
-    emoji    : '🕷',
+    emoji    : '',
     subtitle : 'Mean-reversion · VWAP microstructure',
     strategy : 'mean_reversion',
     badge    : 'v2',
@@ -38,7 +38,7 @@ const ENGINES = {
   jackal: {
     id       : 'jackal',
     name     : 'Jackal',
-    emoji    : '🐺',
+    emoji    : '',
     subtitle : 'Micro-momentum burst · 3-tick streak entry',
     strategy : 'micro_momentum_burst',
     badge    : 'v1',
@@ -398,7 +398,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
 
   const applyConfig = async () => {
     await axios.post(`${API}${eng.apiBase}/config`, cfg);
-    showFlash('Config applied ✓', true);
+    showFlash('Config applied ', true);
   };
 
   // ─── Data extraction ───────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
           padding:'12px 16px', display:'flex', alignItems:'center', gap: 12,
           background:'var(--neg-dim)', borderColor:'var(--neg-b)',
         }}>
-          <span>⛔</span>
+          <span></span>
           <div style={{ flex:1 }}>
             <div style={{ fontFamily:'var(--mono)', fontSize: 10, fontWeight: 700,
               color:'var(--neg)', marginBottom: 2 }}>
@@ -580,12 +580,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
             background:'var(--surface2)', border:'1px solid var(--border)',
             borderRadius:'var(--radius-sm)', display:'flex', gap: 20 }}>
             <div style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
-              <strong style={{ color: engineMode === 'predator' ? 'var(--ink)' : 'var(--ink4)' }}>🕷 Predator</strong>
+              <strong style={{ color: engineMode === 'predator' ? 'var(--ink)' : 'var(--ink4)' }}> Predator</strong>
               {' '}— waits for 1.5–3σ VWAP extreme, 3-gate confirmation, R:R ≥ 2.5, holds up to 60s.
             </div>
             <div style={{ width: 1, background:'var(--border)', flexShrink: 0 }}/>
             <div style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
-              <strong style={{ color: engineMode === 'jackal' ? 'var(--amber)' : 'var(--ink4)' }}>🐺 Jackal</strong>
+              <strong style={{ color: engineMode === 'jackal' ? 'var(--amber)' : 'var(--ink4)' }}> Jackal</strong>
               {' '}— enters on 3 consecutive momentum ticks, fixed TP/SL, holds 3–12s. High frequency.
             </div>
           </div>
@@ -705,7 +705,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             color:'var(--ink4)', cursor:'pointer', fontSize: 11, transition:'all .15s' }}
                             onMouseEnter={e => { e.currentTarget.style.borderColor='var(--neg-b)'; e.currentTarget.style.color='var(--neg)'; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--ink4)'; }}
-                          >✕</button>
+                          ></button>
                         </div>
                       </div>
 
@@ -771,7 +771,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
             <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
               borderRadius:'var(--radius-sm)', padding:'10px 14px', marginBottom: 14,
               display:'flex', gap: 10, alignItems:'flex-start' }}>
-              <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
+              <span style={{ fontSize: 14, flexShrink: 0 }}></span>
               <p style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
                 Shows where each coin sits relative to its mean-reversion entry zone.
                 Green border = VWAP z-score threshold reached with OFI alignment.
@@ -849,8 +849,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
                         {m.spread_ok
-                          ? <span className="badge badge-muted" style={{ fontSize: 8 }}>Normal ✓</span>
-                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>}
+                          ? <span className="badge badge-muted" style={{ fontSize: 8 }}>Normal </span>
+                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide </span>}
                       </div>
                       {inPos && m.position && (
                         <div style={{ marginTop: 12, paddingTop: 12, borderTop:'1px solid var(--border)' }}>
@@ -876,7 +876,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
             <div style={{ background:'var(--surface2)', border:'1px solid var(--border)',
               borderRadius:'var(--radius-sm)', padding:'10px 14px', marginBottom: 14,
               display:'flex', gap: 10, alignItems:'flex-start' }}>
-              <span style={{ fontSize: 14, flexShrink: 0 }}>⚡</span>
+              <span style={{ fontSize: 14, flexShrink: 0 }}></span>
               <p style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
                 Detects consecutive tick momentum. Entry fires on {jackCfg.min_streak}+ ticks in one direction
                 with minimum {jackCfg.min_move_pct}% total move. OFI gate prevents extreme opposing flow.
@@ -957,8 +957,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
                         {(b.spread_pct ?? 0) < (jackCfg.max_spread_pct ?? 0.08)
-                          ? <span className="badge badge-muted" style={{ fontSize: 8 }}>OK ✓</span>
-                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide ⚠</span>}
+                          ? <span className="badge badge-muted" style={{ fontSize: 8 }}>OK </span>
+                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide </span>}
                       </div>
                     </div>
                   );
@@ -1104,7 +1104,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   background: vault.is_halted ? 'var(--neg-dim)' : 'var(--pos-dim)',
                   border:`1px solid ${vault.is_halted ? 'var(--neg-b)' : 'var(--pos-b)'}`,
                   display:'flex', alignItems:'center', gap: 12 }}>
-                  <span style={{ fontSize: 20 }}>{vault.is_halted ? '🔒' : '🟢'}</span>
+                  <span style={{ fontSize: 20 }}>{vault.is_halted ? '' : '🟢'}</span>
                   <div style={{ flex:1 }}>
                     <div style={{ fontFamily:'var(--mono)', fontSize: 11, fontWeight: 700,
                       color: vault.is_halted ? 'var(--neg)' : 'var(--pos)' }}>
@@ -1216,7 +1216,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
             {engineMode === 'predator' && (
               <>
                 <div>
-                  <SecLabel>🕷 Predator — Mean Reversion Parameters</SecLabel>
+                  <SecLabel> Predator — Mean Reversion Parameters</SecLabel>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
                     <CfgInput label="Max Concurrent Positions" hint="Recommended: 2–4"
                       value={predCfg.max_positions} step={1} min={1} max={10}
@@ -1254,7 +1254,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
             {engineMode === 'jackal' && (
               <>
                 <div>
-                  <SecLabel>🐺 Jackal — Burst Entry Parameters</SecLabel>
+                  <SecLabel> Jackal — Burst Entry Parameters</SecLabel>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
                     <CfgInput label="Max Concurrent Positions" hint="3–8, Jackal trades fast"
                       value={jackCfg.max_positions} step={1} min={1} max={10}
@@ -1284,7 +1284,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 </div>
                 <hr className="divider" style={{ margin:0 }}/>
                 <div>
-                  <SecLabel>🔒 Vault Parameters</SecLabel>
+                  <SecLabel> Vault Parameters</SecLabel>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 12 }}>
                     <CfgInput label="Lock Step %" hint="Every +N% gain evaluates floor"
                       value={jackCfg.lock_step_pct} step={0.1} min={0.1} max={2.0}

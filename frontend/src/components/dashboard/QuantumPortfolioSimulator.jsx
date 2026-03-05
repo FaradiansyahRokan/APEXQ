@@ -823,7 +823,7 @@ export default function QuantumPortfolioSimulator() {
                 background: 'rgba(255,68,102,0.1)', border: '1px solid var(--red)',
                 borderRadius: 8, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12
               }}>
-                <span style={{ fontSize: 20 }}>🛑</span>
+                <span style={{ fontSize: 20 }}></span>
                 <div style={{ fontFamily: 'var(--mono)' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase' }}>Circuit Breaker Active</div>
                   <div style={{ fontSize: 9, color: 'var(--ink2)' }}>Simulation halted to protect capital</div>
@@ -1091,7 +1091,7 @@ export default function QuantumPortfolioSimulator() {
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {[1.5, 1.0].map(mult => {
                     const label = mult === 1.5 ? "3R — Strong Trend" : "2R — Normal / Default";
-                    const emoji = mult === 1.5 ? "🚀" : "📊";
+                    const emoji = mult === 1.5 ? "" : "";
                     const trades = result.trades.filter(t => Math.abs((t.tp_multiplier||1.0) - mult) < 0.05);
                     if (!trades.length) return (
                       <div key={mult} style={{ flex: 1, minWidth: 140, padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderLeft: `3px solid var(--border)`, opacity: 0.5 }}>

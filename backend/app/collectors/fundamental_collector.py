@@ -54,7 +54,7 @@ def get_fundamentals(ticker, is_crypto=False):
         }
 
     except Exception as e:
-        print(f"🚨 [FUNDAMENTAL ENGINE] Error fetching {ticker}: {e}")
+        print(f" [FUNDAMENTAL ENGINE] Error fetching {ticker}: {e}")
         return {
             "stats": {},
             "ownership": {}

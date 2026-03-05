@@ -124,7 +124,7 @@ def get_binance_crypto_data(ticker, tf="1D"):
     interval = tf_map.get(tf, "1d")
 
     try:
-        print(f"🔄 [BINANCE] Mencoba mengambil data untuk: {symbol}")
+        print(f" [BINANCE] Mencoba mengambil data untuk: {symbol}")
         
         url_klines = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=300"
         res_klines = requests.get(url_klines, headers=headers)
@@ -190,5 +190,5 @@ def get_binance_crypto_data(ticker, tf="1D"):
         return df, chart_data, live_price, profile
 
     except Exception as e:
-        print(f"🚨 [BINANCE ENGINE] Exception fetching {ticker}: {e}")
+        print(f" [BINANCE ENGINE] Exception fetching {ticker}: {e}")
         return None, [], 0.0, {}

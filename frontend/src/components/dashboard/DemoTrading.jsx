@@ -274,7 +274,7 @@ export default function DemoTrading() {
           : liveP >= pos.limitPrice;
         if (hit) {
           changed = true;
-          notifs.push({ msg: `✅ Limit order FILLED: ${pos.ticker} @ ${fmt(pos.limitPrice, 4)}`, type: 'success' });
+          notifs.push({ msg: ` Limit order FILLED: ${pos.ticker} @ ${fmt(pos.limitPrice, 4)}`, type: 'success' });
           return { ...pos, status: 'OPEN', entryPrice: pos.limitPrice };
         }
       }
@@ -297,7 +297,7 @@ export default function DemoTrading() {
           ];
           updated.currentBalance = Number((updated.currentBalance + pnl).toFixed(2));
           updated.equityCurve    = [...updated.equityCurve, { date: today(), balance: updated.currentBalance }];
-          notifs.push({ msg: `🛑 Stop Loss hit: ${pos.ticker} P&L ${fmtUSD(pnl)}`, type: pnl >= 0 ? 'success' : 'error' });
+          notifs.push({ msg: ` Stop Loss hit: ${pos.ticker} P&L ${fmtUSD(pnl)}`, type: pnl >= 0 ? 'success' : 'error' });
           return null; // remove from open
         }
       }
@@ -320,7 +320,7 @@ export default function DemoTrading() {
           ];
           updated.currentBalance = Number((updated.currentBalance + pnl).toFixed(2));
           updated.equityCurve    = [...updated.equityCurve, { date: today(), balance: updated.currentBalance }];
-          notifs.push({ msg: `🎯 Take Profit hit: ${pos.ticker} +${fmtUSD(pnl)}`, type: 'success' });
+          notifs.push({ msg: ` Take Profit hit: ${pos.ticker} +${fmtUSD(pnl)}`, type: 'success' });
           return null; // remove from open
         }
       }
@@ -700,7 +700,7 @@ export default function DemoTrading() {
       }
     } catch (e) {
       console.error('Signal error:', e);
-      notify('❌ Analysis failed — check ticker or backend', 'error');
+      notify(' Analysis failed — check ticker or backend', 'error');
     } finally {
       setSigLoading(false);
       setChartLoading(false);
@@ -725,7 +725,7 @@ export default function DemoTrading() {
     let fillPrice;
     if (isLimit) {
       fillPrice = Number(limitPrice);
-      if (!fillPrice || fillPrice <= 0) { notify('❌ Limit price harus diisi', 'error'); return; }
+      if (!fillPrice || fillPrice <= 0) { notify(' Limit price harus diisi', 'error'); return; }
     } else {
       // Fetch live price NOW (same as clicking "buy" at broker)
       setExecBusy(true);
@@ -739,11 +739,11 @@ export default function DemoTrading() {
         // Fallback to form value if backend unreachable
         fillPrice = Number(entryPrice);
         if (!fillPrice || fillPrice <= 0) {
-          notify('❌ Tidak bisa fetch harga live — isi entry price manual', 'error');
+          notify(' Tidak bisa fetch harga live — isi entry price manual', 'error');
           setExecBusy(false);
           return;
         }
-        notify('⚠ Pakai harga form (backend timeout)', 'error');
+        notify(' Pakai harga form (backend timeout)', 'error');
       } finally {
         setExecBusy(false);
       }
@@ -760,7 +760,7 @@ export default function DemoTrading() {
     let shares, positionValue;
 
     if (slVal && Math.abs(fillPrice - slVal) > 0) {
-      // ✅ CORRECT: risk-based sizing
+      //  CORRECT: risk-based sizing
       // shares = berapa unit yang bisa kita beli supaya jika harga hit SL,
       // kerugian kita tepat = dollarRisk
       const slDistance = Math.abs(fillPrice - slVal);
@@ -804,8 +804,8 @@ export default function DemoTrading() {
       ? `${fmt(shares, 2)} unit`
       : `${fmt(shares, 6)} unit`;
     notify(isLimit
-      ? `📋 Limit order placed: ${pos.ticker} ${direction} @ ${fmt(fillPrice, fillPrice < 10 ? 4 : 2)} · ${sizeStr}`
-      : `✅ Filled: ${pos.ticker} ${direction} @ ${fmt(fillPrice, fillPrice < 10 ? 4 : 2)} · ${sizeStr} · Pos $${fmt(positionValue)}`,
+      ? ` Limit order placed: ${pos.ticker} ${direction} @ ${fmt(fillPrice, fillPrice < 10 ? 4 : 2)} · ${sizeStr}`
+      : ` Filled: ${pos.ticker} ${direction} @ ${fmt(fillPrice, fillPrice < 10 ? 4 : 2)} · ${sizeStr} · Pos $${fmt(positionValue)}`,
       'success');
   };
 
@@ -928,12 +928,12 @@ export default function DemoTrading() {
 
           <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 26, textAlign: 'left' }}>
             {[
-              ['📊', 'Apex Quant Engine: VaR, CVaR, Calmar, Omega, Fat Tail detection'],
-              ['📈', 'Candlestick chart + EMA overlays for every analysis'],
-              ['📋', 'Market & Limit orders — auto-executes when price hits'],
-              ['🎯', 'Auto Stop-Loss & Take-Profit from volatility-based setup'],
-              ['🛡️', 'Equity Armor: milestone floors & Kelly-adjusted risk scaling'],
-              ['🔴', 'Crypto Orderbook (Hyperliquid) for BTC-USD / ETH-USD'],
+              ['', 'Apex Quant Engine: VaR, CVaR, Calmar, Omega, Fat Tail detection'],
+              ['', 'Candlestick chart + EMA overlays for every analysis'],
+              ['', 'Market & Limit orders — auto-executes when price hits'],
+              ['', 'Auto Stop-Loss & Take-Profit from volatility-based setup'],
+              ['', 'Equity Armor: milestone floors & Kelly-adjusted risk scaling'],
+              ['', 'Crypto Orderbook (Hyperliquid) for BTC-USD / ETH-USD'],
             ].map(([icon, text], i) => (
               <div key={i} style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.04em', marginBottom: i < 5 ? 7 : 0, display: 'flex', gap: 9, alignItems: 'flex-start' }}>
                 <span>{icon}</span><span>{text}</span>
@@ -975,7 +975,7 @@ export default function DemoTrading() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--pos)', boxShadow: '0 0 6px var(--pos)' }} className="pulse-dot" />
           <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--ink3)' }}>
-            Demo Mode · {account.sessionId.slice(5, 13)} · Polling {account.openPositions.length > 0 ? '🟢' : '⚪'}
+            Demo Mode · {account.sessionId.slice(5, 13)} · Polling {account.openPositions.length > 0 ? '🟢' : ''}
           </span>
         </div>
         <button onClick={resetAccount} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 13px', fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', cursor: 'pointer' }}>
@@ -1004,8 +1004,8 @@ export default function DemoTrading() {
       {/* ── PAGE TAB SWITCHER ───────────────────────────────── */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 18, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)' }}>
         {[
-          { id: 'demo', label: '📊  Demo Trading' },
-          { id: 'hft',  label: '⚡  HFT Bot (Spider)' },
+          { id: 'demo', label: '  Demo Trading' },
+          { id: 'hft',  label: '  HFT Bot (Spider)' },
         ].map(({ id, label }) => (
           <button key={id} onClick={() => setMainTab(id)} style={{
             flex: 1, padding: '11px 0', border: 'none', cursor: 'pointer',
@@ -1138,7 +1138,7 @@ export default function DemoTrading() {
                   {isCrypto(standaloneChart?.ticker || '') && liveCandle && (
                     <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--pos)', letterSpacing: '0.08em' }}>● LIVE</span>
                   )}
-                  <button onClick={() => { setStandaloneChart(null); setLiveCandle(null); chartWsRef.current?.close(); }} style={{ background: 'none', border: 'none', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)', cursor: 'pointer' }}>✕ close</button>
+                  <button onClick={() => { setStandaloneChart(null); setLiveCandle(null); chartWsRef.current?.close(); }} style={{ background: 'none', border: 'none', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)', cursor: 'pointer' }}> close</button>
                 </div>
               </div>
 
@@ -1271,7 +1271,7 @@ export default function DemoTrading() {
                         <QRow label="VaR 95% (CF)"    value={q.var_95_cf_pct != null ? `${fmt(q.var_95_cf_pct, 3)}%` : '—'} color="var(--neg)" />
                         <QRow label="Skewness"        value={q.skewness != null ? fmt(q.skewness, 3) : '—'} color={q.skewness < -0.5 ? 'var(--neg)' : 'var(--ink2)'} />
                         <QRow label="Excess Kurtosis" value={q.excess_kurtosis != null ? fmt(q.excess_kurtosis, 2) : '—'} color={q.excess_kurtosis > 3 ? 'var(--neg)' : 'var(--ink2)'} />
-                        <QRow label="Fat Tail Risk"   value={q.fat_tail ? 'YES ⚠' : 'NORMAL'} badge={q.fat_tail ? 'badge-red' : 'badge-green'} />
+                        <QRow label="Fat Tail Risk"   value={q.fat_tail ? 'YES ' : 'NORMAL'} badge={q.fat_tail ? 'badge-red' : 'badge-green'} />
                       </div>
                     </div>
                   </div>
@@ -1302,8 +1302,8 @@ export default function DemoTrading() {
                           </span>
                         </div>
                         {tradeSetup.tradeGate === 'OPEN'
-                          ? <span className="badge badge-green" style={{ fontSize: 6 }}>GATE OPEN ✓</span>
-                          : <span className="badge badge-red"   style={{ fontSize: 6 }}>GATE CLOSED ✗</span>
+                          ? <span className="badge badge-green" style={{ fontSize: 6 }}>GATE OPEN </span>
+                          : <span className="badge badge-red"   style={{ fontSize: 6 }}>GATE CLOSED </span>
                         }
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
@@ -1424,7 +1424,7 @@ export default function DemoTrading() {
                   {execBusy
                     ? '⏳ Fetching price…'
                     : form.orderType === 'LIMIT'
-                      ? '📋 Place Limit'
+                      ? ' Place Limit'
                       : `↑ Open ${form.direction}`}
                 </button>
               </div>
@@ -1486,10 +1486,10 @@ export default function DemoTrading() {
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--neg)' }}>
-                            {pos.stopLoss ? `SL ${fmt(pos.stopLoss, pos.stopLoss < 10 ? 4 : 2)}` : '✗ No SL'}
+                            {pos.stopLoss ? `SL ${fmt(pos.stopLoss, pos.stopLoss < 10 ? 4 : 2)}` : ' No SL'}
                           </span>
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--pos)' }}>
-                            {pos.takeProfit ? `TP ${fmt(pos.takeProfit, pos.takeProfit < 10 ? 4 : 2)}` : '✗ No TP'}
+                            {pos.takeProfit ? `TP ${fmt(pos.takeProfit, pos.takeProfit < 10 ? 4 : 2)}` : ' No TP'}
                           </span>
                         </div>
                         <button
@@ -1593,7 +1593,7 @@ export default function DemoTrading() {
           {/* Equity Armor ──────────────────────────────────── */}
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 13, padding: 18 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>🛡️ Equity Armor</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}> Equity Armor</span>
               {armorBusy
                 ? <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>updating…</span>
                 : <span className={`badge ${armorMode === 'FULL' || armorMode === 'ACTIVE' ? 'badge-green' : armorMode === 'REDUCED' ? 'badge-amber' : 'badge-red'}`}>{armorMode}</span>
@@ -1623,7 +1623,7 @@ export default function DemoTrading() {
               {armorBusy ? 'Refreshing…' : '↺ Refresh Armor'}
             </button>
             {!account.armorReady && (
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--neg)', marginTop: 8, textAlign: 'center' }}>⚠ Backend offline — armor inactive</p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--neg)', marginTop: 8, textAlign: 'center' }}> Backend offline — armor inactive</p>
             )}
           </div>
 
@@ -1665,7 +1665,7 @@ export default function DemoTrading() {
                       <div key={i} style={{ borderRadius: 6, overflow: 'hidden', border: `1px solid ${m.reached ? 'var(--pos-b)' : isNext ? 'var(--border2)' : 'var(--border)'}`, opacity: m.reached ? 1 : isNext ? 0.9 : 0.45 }}>
                         <div style={{ padding: '6px 10px', background: m.reached ? '#16a34a0c' : isNext ? 'var(--surface2)' : 'transparent', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 9 }}>{m.reached ? '✓' : isNext ? '→' : '○'}</span>
+                            <span style={{ fontSize: 9 }}>{m.reached ? '' : isNext ? '→' : '○'}</span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, color: m.reached ? 'var(--pos)' : isNext ? 'var(--ink)' : 'var(--ink3)' }}>+{m.level_pct}%</span>
                             {isNext && <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)' }}>${fmt(targetBal, 0)}</span>}
                           </div>
