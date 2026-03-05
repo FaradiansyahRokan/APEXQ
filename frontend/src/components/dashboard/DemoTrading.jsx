@@ -1480,11 +1480,27 @@ export default function DemoTrading() {
                 </div>
               ) : (
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 100px 110px 80px 1fr', padding: '8px 16px', borderBottom: '1px solid var(--border)', gap: 4 }}>
-                    {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
-                      <span key={h} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink4)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>{h}</span>
-                    ))}
-                  </div>
+                  <div style={{ 
+  display: 'grid', 
+  // 1. Ubah gridTemplateColumns di sini (Perbesar kolom ke-6 jadi 160px)
+  gridTemplateColumns: '80px 60px 100px 100px 110px 160px 100px 1fr', 
+  padding: '8px 16px', 
+  borderBottom: '1px solid var(--border)', 
+  gap: 8 // Sedikit renggangkan gap dari 4 ke 8 biar lebih lega
+}}>
+  {['Ticker','Dir','Entry','Live Price','Unr. P&L','Size / Pos Value','SL · TP',''].map(h => (
+    <span key={h} style={{ 
+      fontFamily: 'var(--mono)', 
+      fontSize: 10, 
+      color: 'var(--ink4)', 
+      letterSpacing: '0.10em', 
+      textTransform: 'uppercase',
+      whiteSpace: 'nowrap' // 2. Tambahkan ini agar teks header/value tidak turun ke bawah
+    }}>
+      {h}
+    </span>
+  ))}
+</div>
                   {openPos.map(pos => {
                     const liveP  = livePrices[pos.ticker];
                     const unrPnl = getUnrealizedPnl(pos);
