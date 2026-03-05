@@ -69,7 +69,8 @@ import uvicorn
 import traceback
 from app.engine.hft_engine import hft_spider
 
-# ── Rapid Scalper (Jackal) ────────────────────────────────────────
+# ── Rapid Scalper (Jackal ULTRA v4.0 WS) ─────────────────────────
+# Coba import versi terbaru dulu (WS ultra), fallback ke versi lama
 try:
     from app.engine.hft_rapid_scalper import rapid_scalper
 except ImportError:
@@ -2834,11 +2835,32 @@ async def rapid_vault_resume():
     return {"ok": True, "message": "Vault resumed — trading unblocked"}
 
 
+@app.get("/api/hft-rapid/ws-feed")
+async def rapid_ws_feed_status():
+    """
+    Status WebSocket market feed (v4.0 baru).
+    Cek apakah WS feed aktif, latency allMids, orderbook age, jumlah msg diterima.
+    """
+    if rapid_scalper is None:
+        raise HTTPException(503, "Rapid Scalper module not loaded")
+    ws_feed = getattr(rapid_scalper, "_ws_feed", None)
+    if ws_feed is None:
+        return {
+            "ws_active": False,
+            "message": "WS feed belum distart atau websockets tidak terinstall",
+            "hint": "pip install websockets"
+        }
+    return {
+        "ws_active": True,
+        **ws_feed.to_dict()
+    }
+
+
 @app.websocket("/ws/hft-rapid")
 async def rapid_websocket(websocket: WebSocket):
     """
-    WebSocket — push status updates setiap 1s.
-    Lebih cepat dari Predator WS (1.5s) karena frekuensi lebih tinggi.
+    WebSocket — push status updates setiap 0.5s (dipercepat dari 1s untuk v4.0).
+    Lebih cepat karena engine loop sekarang 15ms, data lebih fresh.
     """
     if rapid_scalper is None:
         await websocket.close()
@@ -2848,7 +2870,7 @@ async def rapid_websocket(websocket: WebSocket):
         while True:
             status = rapid_scalper.get_status()
             await websocket.send_json(status)
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)   # dipercepat dari 1.0s → 0.5s
     except WebSocketDisconnect:
         pass
     except Exception:
