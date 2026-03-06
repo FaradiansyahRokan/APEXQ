@@ -505,13 +505,11 @@ export default function Screener({ onAnalyze }) {
             gap: 12, marginBottom: 28,
           }}>
             <CountPill
-              icon="🟢"
               count={result.summary.satin_ready_count}
               label="Satin Ready"
               color="var(--green)"
             />
             <CountPill
-              icon="🟡"
               count={result.summary.marginal_count}
               label="Marginal"
               color="var(--ink)"
