@@ -3113,8 +3113,9 @@ class RapidScalper:
                     meta["microprice"]     = round(microprice, 6)
                     meta["_meta_decision"] = _meta_decision   # for register_open
                     # Force market jika momentum kuat (streak ≥ threshold)
-                    force_mkt = meta.get("streak", 0) >= self.config.force_market_streak
-                    await self._enter_position_v5(coin, direction, tick, capital, meta, regime_mods, force_mkt)
+                    force_mkt  = meta.get("streak", 0) >= self.config.force_market_streak
+                    v7_capital = self._compute_v7_capital(capital, meta)
+                    await self._enter_position_v5(coin, direction, tick, v7_capital, meta, regime_mods, force_mkt)
                     coin_pos_count += 1
                     if coin_pos_count >= self.config.max_pos_per_coin:
                         continue
@@ -3151,8 +3152,25 @@ class RapidScalper:
                         meta["engine"]         = "accel"
                         meta["l3_imbalance"]   = round(l3_imbalance, 3)
                         meta["_meta_decision"] = _meta_decision
-                        await self._enter_position_v5(coin, direction, tick, capital, meta, regime_mods)
+                        v7_capital = self._compute_v7_capital(capital, meta)
+                        await self._enter_position_v5(coin, direction, tick, v7_capital, meta, regime_mods)
                         coin_pos_count += 1
+
+    def _compute_v7_capital(self, base_capital: float, meta: dict) -> float:
+        """
+        Apply APEX v7 size scalars collected in meta by _passes_v5_gates Gate 5.
+        Combines: Kalman · Hawkes · OU · Realized Vol scalars.
+        Result is clamped to [0.25 × base, 1.5 × base].
+
+        Jackal philosophy: ALWAYS enter — just scale size appropriately.
+        """
+        scalar = 1.0
+        scalar *= meta.get("apex_kalman_scalar", 1.0)
+        scalar *= meta.get("apex_hawkes_scalar", 1.0)
+        scalar *= meta.get("apex_ou_scalar",     1.0)
+        scalar *= meta.get("apex_rvol_scalar",   1.0)
+        scalar  = float(max(min(scalar, 1.50), 0.25))
+        return base_capital * scalar
 
     def _passes_v5_gates(
         self,
@@ -3245,29 +3263,100 @@ class RapidScalper:
             except Exception:
                 pass
 
-        # ── Gate 5: APEX v6 Kalman + Bayesian Regime Enricher (non-blocking) ─
-        # Enriches meta with v6 signal data. Doesn't block — only adjusts size scalar.
+        # ── Gate 5: APEX v7 Full Analytics Enricher (Jackal momentum-first) ─
+        # Strategy: Hawkes momentum is PRIMARY boost for Jackal.
+        # OU z-score is secondary (loose — non-blocking).
+        # Realized Vol adjusts size for risk control.
+        # Kalman is tertiary trim-only signal.
+        # NOTHING here blocks entry — Jackal always enters on momentum.
         if HAS_APEX_V6:
             try:
                 burst = self._burst.get(coin)
                 if burst and len(burst.ticks) >= 30:
-                    # Build mini price series from recent ticks
                     import pandas as pd
                     prices = [t.mid for t in burst.ticks[-60:] if t.mid > 0]
                     if len(prices) >= 30:
                         df_mini = pd.DataFrame({"Close": prices})
+
+                        # ── 5a: Kalman Filter (trim-only if strongly disagrees) ──
                         kf = kalman_filter_trend(df_mini)
-                        kf_signal = kf.get("signal", "SIDEWAYS")
+                        kf_signal    = kf.get("signal", "SIDEWAYS")
                         kf_trend_bps = kf.get("trend_bps_per_tick", 0.0)
-                        meta["kalman_signal"] = kf_signal
+                        meta["kalman_signal"]    = kf_signal
                         meta["kalman_trend_bps"] = kf_trend_bps
-                        # If Kalman strongly disagrees with direction, slightly reduce size
                         if direction == "LONG" and kf_signal == "BEARISH" and kf_trend_bps < -5:
-                            meta["apex_kalman_scalar"] = 0.7
+                            meta["apex_kalman_scalar"] = 0.80
                         elif direction == "SHORT" and kf_signal == "BULLISH" and kf_trend_bps > 5:
-                            meta["apex_kalman_scalar"] = 0.7
+                            meta["apex_kalman_scalar"] = 0.80
                         else:
                             meta["apex_kalman_scalar"] = 1.0
+
+                        # ── 5b: Hawkes Process — PRIMARY Jackal momentum detector ──
+                        # η (branching_ratio) = self-exciting order flow intensity.
+                        # η > 0.5 = momentum is alive → Jackal loves this.
+                        # η > 0.75 = very strong flow → boost size.
+                        # η < 0.2 = flow dying → no boost, neutral.
+                        try:
+                            hk  = hawkes_microstructure_signal(df_mini)
+                            eta = hk.get("branching_ratio", 0.0)
+                            hk_dir = hk.get("momentum_direction", "NEUTRAL")
+                            meta["hawkes_branching_ratio"] = round(eta, 4)
+                            meta["hawkes_direction"]       = hk_dir
+                            if eta > 0.75 and hk_dir == direction:
+                                meta["apex_hawkes_scalar"] = 1.20   # strong flow matching direction
+                            elif eta > 0.50 and hk_dir == direction:
+                                meta["apex_hawkes_scalar"] = 1.10   # moderate flow matching direction
+                            elif eta > 0.80 and hk_dir != direction and hk_dir != "NEUTRAL":
+                                meta["apex_hawkes_scalar"] = 0.75   # very strong opposing flow → trim
+                            else:
+                                meta["apex_hawkes_scalar"] = 1.0
+                        except Exception:
+                            meta["apex_hawkes_scalar"] = 1.0
+
+                        # ── 5c: OU z-score — loose momentum confirmation ──────────
+                        # For Jackal: only use OU to confirm momentum is NOT exhausted.
+                        # |ou_z| > 3.0 = very overextended → trim slightly.
+                        try:
+                            ou    = ou_trading_signals(df_mini, window=min(60, len(prices)))
+                            ou_z  = ou.get("ou_zscore", 0.0)
+                            ou_hl = ou.get("half_life", 999)
+                            meta["ou_zscore"]   = round(ou_z, 4)
+                            meta["ou_half_life"] = round(ou_hl, 2)
+                            # If heavily overextended in our direction → slightly trim (avoid reversal)
+                            if direction == "LONG" and ou_z > 3.0:
+                                meta["apex_ou_scalar"] = 0.85   # might reverse soon
+                            elif direction == "SHORT" and ou_z < -3.0:
+                                meta["apex_ou_scalar"] = 0.85
+                            else:
+                                meta["apex_ou_scalar"] = 1.0
+                        except Exception:
+                            meta["apex_ou_scalar"] = 1.0
+
+                        # ── 5d: Realized Vol — vol-adjusted size control ──────────
+                        # High vol = reduce exposure; low vol = normal.
+                        try:
+                            p_arr = np.array(prices[-60:])
+                            wsize = max(5, len(p_arr) // 10)
+                            highs = pd.Series(p_arr).rolling(wsize).max().bfill().values
+                            lows  = pd.Series(p_arr).rolling(wsize).min().bfill().values
+                            opens = np.roll(p_arr, 1); opens[0] = p_arr[0]
+                            df_ohlc = pd.DataFrame({
+                                "Open": opens, "High": highs,
+                                "Low": lows, "Close": p_arr
+                            })
+                            rv = realized_vol_suite(df_ohlc)
+                            rvol_pct = rv.get("consensus_vol_pct", 1.0)
+                            meta["realized_vol_pct"] = round(rvol_pct, 4)
+                            # Jackal targets: high vol = smaller exposure (still enters!)
+                            if rvol_pct > 3.0:
+                                meta["apex_rvol_scalar"] = 0.70   # extreme vol → reduce
+                            elif rvol_pct > 1.5:
+                                meta["apex_rvol_scalar"] = 0.85   # elevated vol → slight reduce
+                            else:
+                                meta["apex_rvol_scalar"] = 1.0    # normal vol → no change
+                        except Exception:
+                            meta["apex_rvol_scalar"] = 1.0
+
             except Exception:
                 pass
 

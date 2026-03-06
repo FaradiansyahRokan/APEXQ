@@ -106,6 +106,7 @@ try:
         kalman_filter_trend, kalman_zscore,
         ou_trading_signals, realized_vol_suite,
         bayesian_regime_filter, master_quant_signal,
+        hawkes_microstructure_signal, yang_zhang_vol,
     )
     HAS_APEX_V6 = True
 except ImportError:
@@ -114,6 +115,7 @@ except ImportError:
             kalman_filter_trend, kalman_zscore,
             ou_trading_signals, realized_vol_suite,
             bayesian_regime_filter, master_quant_signal,
+            hawkes_microstructure_signal, yang_zhang_vol,
         )
         HAS_APEX_V6 = True
     except ImportError:
@@ -314,6 +316,12 @@ class HFTPosition:
     atr_at_entry:  float     # ATR saat entry untuk adaptive stops
     unrealized_pnl: float = 0.0
     unrealized_pct: float = 0.0
+    engine_meta:    dict = None   # APEX v6 enrichments (Kalman, Alpha, etc)
+
+    def __post_init__(self):
+        if self.engine_meta is None:
+            self.engine_meta = {}
+
 
     def update_price(self, price: float, atr: float = 0.0):
         self.current_price = price
@@ -1012,9 +1020,11 @@ class HFTPredator:
                     "carry_apy"     : alpha.get("funding", {}).get("apy_pct",     0.0),
                 }
 
-            # ── Gate 7 [v7]: Kalman + OU Enricher (non-blocking) ───────────
-            # Enriches signal with Kalman trend and OU z-score.
-            # Does NOT block entry — only adjusts size up/down.
+            # ── Gate 7 [v7]: Full APEX Analytics Enricher ─────────────────
+            # Multi-layer: Kalman trend + OU mean-reversion + Hawkes momentum
+            #              + Realized Vol adaptive stop + Master Quant Signal
+            # Non-blocking for all sub-signals — only adjusts size_scalar.
+            # master_quant_signal is the exception: confidence < 30 → hard skip.
             kalman_meta = {}
             if HAS_APEX_V6:
                 try:
@@ -1022,30 +1032,119 @@ class HFTPredator:
                     prices = ms.price_history()  # returns list of floats
                     if len(prices) >= 30:
                         df_k = pd.DataFrame({"Close": prices})
-                        kf = kalman_filter_trend(df_k)
-                        ks = kf.get("signal", "SIDEWAYS")
-                        kt = kf.get("trend_bps_per_tick", 0.0)
-                        ou = ou_trading_signals(df_k, window=min(60, len(prices)))
-                        ou_z = ou.get("ou_zscore", 0.0)
-                        ou_prof = ou.get("profitable", False)
-                        # Kalman agrees with direction = small boost
+
+                        # ── 7a: Kalman Filter trend ─────────────────────────
+                        kf    = kalman_filter_trend(df_k)
+                        ks    = kf.get("signal", "SIDEWAYS")
+                        kt    = kf.get("trend_bps_per_tick", 0.0)
+                        kz    = kf.get("zscore", 0.0)
                         if direction == "LONG" and ks == "BULLISH":
-                            size_scalar *= 1.1
+                            size_scalar *= 1.10
                         elif direction == "SHORT" and ks == "BEARISH":
-                            size_scalar *= 1.1
-                        # Kalman strongly disagrees = trim
+                            size_scalar *= 1.10
                         elif direction == "LONG" and ks == "BEARISH" and kt < -5:
                             size_scalar *= 0.75
                         elif direction == "SHORT" and ks == "BULLISH" and kt > 5:
                             size_scalar *= 0.75
-                        # OU confirms mean reversion opportunity
+
+                        # ── 7b: OU mean-reversion z-score ──────────────────
+                        ou      = ou_trading_signals(df_k, window=min(60, len(prices)))
+                        ou_z    = ou.get("ou_zscore", 0.0)
+                        ou_prof = ou.get("profitable", False)
                         if ou_prof and direction == "LONG" and ou_z < -1.5:
                             size_scalar *= 1.05
                         elif ou_prof and direction == "SHORT" and ou_z > 1.5:
                             size_scalar *= 1.05
+
+                        # ── 7c: Hawkes Process — order flow momentum ────────
+                        # η (branching ratio) > 0.7 = strong self-exciting momentum
+                        hawkes_meta = {}
+                        try:
+                            hk = hawkes_microstructure_signal(df_k)
+                            eta   = hk.get("branching_ratio", 0.0)
+                            hk_dir = hk.get("momentum_direction", "NEUTRAL")
+                            # Hawkes confirms our direction AND momentum is strong
+                            if eta > 0.65 and hk_dir == direction:
+                                size_scalar *= 1.12   # strong flow → boost
+                            elif eta > 0.85 and hk_dir != direction and hk_dir != "NEUTRAL":
+                                size_scalar *= 0.70   # strong opposing flow → trim
+                            hawkes_meta = {
+                                "branching_ratio": round(eta, 4),
+                                "hawkes_direction": hk_dir,
+                            }
+                        except Exception:
+                            pass
+
+                        # ── 7d: Realized Vol → adaptive stop recalibration ─
+                        rvol_meta = {}
+                        try:
+                            if len(prices) >= 20:
+                                # Build OHLC proxy from price ticks
+                                p_arr = np.array(prices[-60:])
+                                wsize = max(5, len(p_arr) // 10)
+                                highs = pd.Series(p_arr).rolling(wsize).max().bfill().values
+                                lows  = pd.Series(p_arr).rolling(wsize).min().bfill().values
+                                opens = np.roll(p_arr, 1); opens[0] = p_arr[0]
+                                df_ohlc = pd.DataFrame({
+                                    "Open": opens, "High": highs,
+                                    "Low": lows, "Close": p_arr
+                                })
+                                rv = realized_vol_suite(df_ohlc)
+                                rvol_pct = rv.get("consensus_vol_pct", 0.0)
+                                # Adjust stop multiplier: high vol → wider stop (don't get shaken out)
+                                # Low vol → tighter stop (noise is low, honour the signal)
+                                if rvol_pct > 2.5:          # very high vol → reduce exposure
+                                    size_scalar *= 0.80
+                                elif rvol_pct < 0.5:        # low vol → normal
+                                    pass
+                                rvol_meta = {"consensus_vol_pct": round(rvol_pct, 4)}
+                        except Exception:
+                            pass
+
+                        # ── 7e: Master Quant Signal — confidence gate ───────
+                        # Only hard-blocks if confidence < 30 (completely unclear market)
+                        # Scales size based on confidence score 0-100
+                        mqs_meta = {}
+                        try:
+                            mqs = master_quant_signal(
+                                df_k,
+                                direction_hint=direction,
+                                account_balance=self.balance,
+                            )
+                            conf   = mqs.get("confidence_score", 50)
+                            mqs_dir = mqs.get("signal", "NEUTRAL")
+                            # Hard skip only if master signal is completely opposite + confident
+                            if mqs_dir in ("STRONG_SHORT",) and direction == "LONG" and conf > 65:
+                                self._log("MQS_BLOCK", f"{coin}: MQS={mqs_dir} conf={conf} vs LONG")
+                                continue
+                            if mqs_dir in ("STRONG_LONG",) and direction == "SHORT" and conf > 65:
+                                self._log("MQS_BLOCK", f"{coin}: MQS={mqs_dir} conf={conf} vs SHORT")
+                                continue
+                            # Scale up if MQS agrees with direction and is confident
+                            if conf >= 70 and (
+                                (direction == "LONG"  and mqs_dir in ("LONG", "STRONG_LONG")) or
+                                (direction == "SHORT" and mqs_dir in ("SHORT", "STRONG_SHORT"))
+                            ):
+                                size_scalar *= 1.15
+                            elif conf < 40:
+                                size_scalar *= 0.75
+                            mqs_meta = {
+                                "mqs_signal":     mqs_dir,
+                                "mqs_confidence": conf,
+                                "mqs_regime":     mqs.get("regime_summary", ""),
+                            }
+                        except Exception:
+                            pass
+
                         kalman_meta = {
-                            "kalman_signal": ks, "kalman_trend_bps": round(kt, 4),
-                            "ou_zscore": round(ou_z, 4), "ou_profitable": ou_prof,
+                            "kalman_signal":    ks,
+                            "kalman_trend_bps": round(kt, 4),
+                            "kalman_zscore":    round(kz, 4),
+                            "ou_zscore":        round(ou_z, 4),
+                            "ou_profitable":    ou_prof,
+                            **hawkes_meta,
+                            **rvol_meta,
+                            **mqs_meta,
                         }
                 except Exception:
                     pass
@@ -1085,6 +1184,7 @@ class HFTPredator:
                 "meta_decision": meta_decision,
                 "intel_meta":    intel_meta,
                 "alpha_meta":    alpha_meta,
+                "kalman_meta":   kalman_meta,
             })
 
         # Sort by expected value
@@ -1198,7 +1298,18 @@ class HFTPredator:
             stop_price    = stop_price,
             tp_price      = tp_price,
             atr_at_entry  = atr,
+            engine_meta   = {
+                "kalman":  c.get("kalman_meta", {}),
+                "alpha":   c.get("alpha_meta", {}),
+                "intel":   c.get("intel_meta", {}),
+                # v7 fields (all packed in kalman_meta which is now the full analytics dict)
+                "hawkes_branching_ratio": c.get("kalman_meta", {}).get("branching_ratio", 0.0),
+                "mqs_signal":             c.get("kalman_meta", {}).get("mqs_signal", "NEUTRAL"),
+                "mqs_confidence":         c.get("kalman_meta", {}).get("mqs_confidence", 50),
+                "realized_vol_pct":       c.get("kalman_meta", {}).get("consensus_vol_pct", 0.0),
+            }
         )
+
 
         self.balance -= capital
         self.positions[pos.id] = pos

@@ -131,17 +131,71 @@ from scipy.stats import norm, t as t_dist, binom
 import warnings
 import time
 
-# ── APEX Engine v6 Consolidated Import ──
-from app.engine.apex_engine_v6 import (
-    score_ticker_from_df,
-    detect_hmm_regime,
-    get_ict_full_analysis,
-    calculate_technicals,  
-)
+# ── APEX Engine v7 Consolidated Import ──
+# Coba import langsung (standalone) dulu, fallback ke app.engine path
+_APEX_V7_FUNCS = [
+    "score_ticker_from_df",
+    "detect_hmm_regime",
+    "get_ict_full_analysis",
+    "calculate_technicals",
+    # v7 New additions
+    "master_quant_signal",
+    "kelly_from_trade_history",
+    "monte_carlo_equity_reshuffling",
+    "rolling_walk_forward",
+    "realized_vol_suite",
+    "yang_zhang_vol",
+    "calculate_quant_metrics",
+    "generate_institutional_report",
+    "hawkes_microstructure_signal",
+    "bayesian_regime_filter",
+]
+
+def _try_apex_import():
+    results = {}
+    for _path in ("apex_engine_v6", "app.engine.apex_engine_v6"):
+        try:
+            import importlib
+            _mod = importlib.import_module(_path)
+            for fn in _APEX_V7_FUNCS:
+                if hasattr(_mod, fn):
+                    results[fn] = getattr(_mod, fn)
+            if results:
+                return results
+        except ImportError:
+            continue
+    return results
+
+_apex = _try_apex_import()
+
+# Expose as module-level names with safe fallbacks
+score_ticker_from_df        = _apex.get("score_ticker_from_df",        lambda df: {"score": 0.0})
+detect_hmm_regime           = _apex.get("detect_hmm_regime",           lambda df, **kw: {"error": "unavailable"})
+get_ict_full_analysis       = _apex.get("get_ict_full_analysis",       lambda df: {})
+calculate_technicals        = _apex.get("calculate_technicals",        lambda df: {})
+master_quant_signal         = _apex.get("master_quant_signal",         None)
+kelly_from_trade_history    = _apex.get("kelly_from_trade_history",    None)
+monte_carlo_equity_reshuffling = _apex.get("monte_carlo_equity_reshuffling", None)
+rolling_walk_forward        = _apex.get("rolling_walk_forward",        None)
+realized_vol_suite          = _apex.get("realized_vol_suite",          None)
+yang_zhang_vol              = _apex.get("yang_zhang_vol",              None)
+calculate_quant_metrics     = _apex.get("calculate_quant_metrics",     None)
+generate_institutional_report = _apex.get("generate_institutional_report", None)
+hawkes_microstructure_signal = _apex.get("hawkes_microstructure_signal", None)
+bayesian_regime_filter      = _apex.get("bayesian_regime_filter",      None)
+
+HAS_APEX_V7 = bool(_apex)
+print(f"   APEX v7 Engine: {'LOADED ✓ (' + str(len(_apex)) + ' functions)' if HAS_APEX_V7 else 'NOT FOUND — using fallbacks'}")
 
 # ── Crypto Data Collectors ──
-from app.collectors.hyperliquid_collector import get_hl_klines
-from app.collectors.market_collector import get_binance_crypto_data
+try:
+    from app.collectors.hyperliquid_collector import get_hl_klines
+except ImportError:
+    get_hl_klines = None
+try:
+    from app.collectors.market_collector import get_binance_crypto_data
+except ImportError:
+    get_binance_crypto_data = None
 
 warnings.filterwarnings("ignore")
 
@@ -192,7 +246,7 @@ class SimulationConfig:
     max_open_trades    : int   = 5         # v4: dinaikkan 3→5 agar N trade lebih besar
     sl_atr_mult        : float = 1.5       # Stop Loss = 1.5x ATR
     tp_rr_ratio        : float = 2.0       # Take Profit = 2R (full)
-    min_screener_score : float = 60.0      # v4: diturunkan 70→60 agar N trade lebih besar
+    min_screener_score : float = 55.0      # v5: diturunkan 60→55 agar lebih banyak peluang
     scan_universe      : str   = "US"
     lookback_years     : int   = 3         # v4: dinaikkan 1→3 untuk statistical power
     max_hold_days      : int   = 15
@@ -208,15 +262,15 @@ class SimulationConfig:
     kelly_fraction     : float = 0.25      # Quarter Kelly (fraction of full Kelly)
     kelly_warmup_trades: int   = 15        # Mulai adaptive Kelly setelah N trades
     kelly_lookback     : int   = 25        # Rolling window trade history untuk Kelly
-    max_risk_cap_pct   : float = 3.0       # Hard cap risk per trade (%)
+    max_risk_cap_pct   : float = 4.0       # v5: naikkan 3→4% untuk lebih agresif profit
     min_risk_floor_pct : float = 0.5       # Minimum risk per trade (%)
-    min_regime_conf    : float = 55.0      # Min HMM confidence % untuk entry
+    min_regime_conf    : float = 45.0      # v5: turunkan 55→45 agar lebih banyak entry
     min_ict_strength   : str   = "MODERATE"  # Min ICT bias strength
-    consec_loss_guard  : int   = 3         # Guard aktif setelah N loss berturut
-    consec_loss_scale  : float = 0.5       # Kurangi size ke X% setelah guard aktif
+    consec_loss_guard  : int   = 5         # v5: naikkan 3→5 agar tidak terlalu cepat reduce size
+    consec_loss_scale  : float = 0.6       # v5: naikkan 0.5→0.6 agar tidak terlalu agresif potong
     regime_size_bull   : float = 1.0       # Size scaling di BULLISH
-    regime_size_chop   : float = 0.6       # Size scaling di SIDEWAYS_CHOP
-    circuit_breaker_dd : float = 15.0      # Circuit breaker pada DD% dari initial
+    regime_size_chop   : float = 0.75      # v5: naikkan 0.6→0.75 di SIDEWAYS_CHOP
+    circuit_breaker_dd : float = 25.0      # v5: naikkan 15→25% agar tidak terlalu cepat halt
     # ── v4.0 Additions ──────────────────────────────
     scan_interval_days : int   = 3         # v4: scan setiap 3 hari (sebelumnya 7)
     # ── v5.0 Additions ──────────────────────────────
@@ -719,6 +773,28 @@ def _compute_quality_score_v4(
 
     quality = screener_pts + regime_pts + ict_pts + tech_pts
 
+    # ── [v7] Master Quant Signal bonus (evidence-weighted 10-model BMA) ──
+    # Adds up to ±10 pts based on 10-model Bayesian consensus vs direction.
+    mqs_pts = 0.0
+    if df_slice is not None and len(df_slice) >= 60 and master_quant_signal is not None:
+        try:
+            mqs      = master_quant_signal(df_slice, direction_hint=direction)
+            mqs_sig  = mqs.get("signal", "NEUTRAL")
+            mqs_conf = mqs.get("confidence_score", 50)
+            if mqs_conf >= 65 and (
+                (direction == "LONG"  and mqs_sig in ("LONG", "STRONG_LONG")) or
+                (direction == "SHORT" and mqs_sig in ("SHORT", "STRONG_SHORT"))
+            ):
+                mqs_pts = min(10.0, (mqs_conf - 65) / 3.5)
+            elif mqs_conf >= 70 and (
+                (direction == "LONG"  and mqs_sig in ("STRONG_SHORT",)) or
+                (direction == "SHORT" and mqs_sig in ("STRONG_LONG",))
+            ):
+                mqs_pts = -10.0
+            quality += mqs_pts
+        except Exception:
+            pass
+
     # ── Soft penalty for counter-trend signals ───────────────────
     if direction == "LONG"  and tech.get("trend_aligned_bear", False):
         quality -= 8.0
@@ -732,11 +808,12 @@ def _compute_quality_score_v4(
         "regime_pts"   : round(regime_pts, 1),
         "ict_pts"      : ict_pts,
         "tech_pts"     : tech_pts,
+        "mqs_pts"      : round(mqs_pts, 1),
         "tech_detail"  : tech_detail,
         "total"        : round(quality, 1),
-        "version"      : "v4.0_debiased",
+        "version"      : "v5.0_apex_v7",
         "removed_signals": ["rsi_ok (anti-signal)", "vol_confirmed (anti-signal)"],
-        "added_signals"  : ["zscore_not_extended", "momentum_moderate"],
+        "added_signals"  : ["zscore_not_extended", "momentum_moderate", "master_quant_signal_v7"],
     }
 
     return quality, breakdown
@@ -994,6 +1071,25 @@ def _find_entry_signal_soft(
     if atr_pct > 80:     sl_mult = 1.2
     elif atr_pct < 25:   sl_mult = 0.9
     else:                sl_mult = 1.0
+
+    # ── [v7] Realized Vol Suite — Yang-Zhang consensus volatility ──
+    # Override sl_mult with Yang-Zhang vol for more accurate SL width.
+    # High realized vol → wider SL (avoid premature stop-out in choppy markets).
+    # Low realized vol  → tighter SL (less noise, honour the signal faster).
+    if realized_vol_suite is not None and len(df_slice) >= 20:
+        try:
+            rv = realized_vol_suite(df_slice)
+            rvol_pct = rv.get("consensus_vol_pct", 0.0)
+            # Adjust sl_mult based on realised vol vs historical mean
+            if rvol_pct > 3.0:
+                sl_mult = max(sl_mult, 1.30)   # very high vol → 30% wider stop
+            elif rvol_pct > 2.0:
+                sl_mult = max(sl_mult, 1.15)   # elevated vol → 15% wider
+            elif rvol_pct < 0.5:
+                sl_mult = min(sl_mult, 0.85)   # very low vol → 15% tighter
+        except Exception:
+            pass
+
     sl_dist_adj = sl_dist * sl_mult
 
     # [FIX v5] SL dan TP dihitung dari entry_price (next open), bukan dari close_last
@@ -1044,7 +1140,8 @@ def _compute_adaptive_kelly(
     consec_losses  : int
 ) -> Tuple[float, float]:
     """
-    Hitung risk_pct yang optimal berdasarkan Kelly dari trade history.
+    v7: Hitung risk_pct optimal via APEX v7 kelly_from_trade_history (MLE-based).
+    Fallback ke manual formula jika v7 tidak tersedia.
 
     Returns:
         (final_risk_pct, kelly_fraction_used)
@@ -1052,12 +1149,32 @@ def _compute_adaptive_kelly(
     # Belum cukup data → pakai base risk
     if len(trade_history) < config.kelly_warmup_trades or not config.use_adaptive_kelly:
         risk = base_risk_pct
-        # Tetap apply consecutive loss guard
         if consec_losses >= config.consec_loss_guard:
             risk *= config.consec_loss_scale
         return min(max(risk, config.min_risk_floor_pct), config.max_risk_cap_pct), 0.25
 
-    # Rolling window dari trade history terakhir
+    # ── [v7] Use kelly_from_trade_history (MLE-based, bias-corrected) ──
+    if kelly_from_trade_history is not None and len(trade_history) >= 20:
+        try:
+            # Build trade pnl list for v7 function
+            pnl_list = [
+                {"pnl_pct": t.pnl_pct, "outcome": t.outcome}
+                for t in trade_history[-config.kelly_lookback:]
+            ]
+            k_result = kelly_from_trade_history(pnl_list)
+            safe_kelly = k_result.get("safe_kelly_pct", 0.0) / 100.0  # convert % → fraction
+            if safe_kelly > 0:
+                # safe_kelly is a fraction of capital; map to risk_pct domain
+                kelly_scaled_risk = base_risk_pct * (safe_kelly / max(config.kelly_fraction, 0.01))
+                kelly_scaled_risk = min(kelly_scaled_risk, config.max_risk_cap_pct)
+                kelly_scaled_risk = max(kelly_scaled_risk, config.min_risk_floor_pct)
+                if consec_losses >= config.consec_loss_guard:
+                    kelly_scaled_risk *= config.consec_loss_scale
+                return round(kelly_scaled_risk, 4), round(safe_kelly, 4)
+        except Exception:
+            pass
+
+    # ── Fallback: manual Kelly formula ───────────────────────────
     recent = trade_history[-config.kelly_lookback:]
     wins   = [t for t in recent if t.outcome == "WIN"]
     losses = [t for t in recent if t.outcome == "LOSS"]
@@ -1080,17 +1197,13 @@ def _compute_adaptive_kelly(
     full_kelly = win_rate - ((1 - win_rate) / rr)
 
     if full_kelly <= 0:
-        # Negative edge → reduce to floor
         return config.min_risk_floor_pct, 0.0
 
-    fractional_kelly = full_kelly * config.kelly_fraction
-    # Scale fractional kelly ke risk_pct domain
-    # full_kelly = 1 → use base_risk_pct, Kelly scale it proportionally
+    fractional_kelly  = full_kelly * config.kelly_fraction
     kelly_scaled_risk = base_risk_pct * (fractional_kelly / (config.kelly_fraction + 1e-9))
     kelly_scaled_risk = min(kelly_scaled_risk, config.max_risk_cap_pct)
     kelly_scaled_risk = max(kelly_scaled_risk, config.min_risk_floor_pct)
 
-    # Apply consecutive loss guard on top
     if consec_losses >= config.consec_loss_guard:
         kelly_scaled_risk *= config.consec_loss_scale
 
@@ -1452,36 +1565,104 @@ def _compute_analytics(result: SimulationResult) -> SimulationResult:
 
 def _compute_full_analytics_v4(result: SimulationResult) -> Dict:
     """
-    v4.0: Augment analytics with statistical audit + walk-forward.
-    Returns a dict ready to merge into the simulation output JSON.
+    v7: Augment analytics with APEX v7 statistical validation suite:
+      - v4 statistical audit (in-house)
+      - v7 monte_carlo_equity_reshuffling (block bootstrap, survivorship-free)
+      - v7 rolling_walk_forward (multi-window IS/OOS)
+      - v7 calculate_quant_metrics (full hedge-fund grade risk analytics)
+    Falls back gracefully if v7 not loaded.
     """
-    audit   = generate_statistical_audit(result)
-    wf      = run_walk_forward_validation(result)
+    audit    = generate_statistical_audit(result)
+    wf_local = run_walk_forward_validation(result)
 
     wf_dict = {
-        "split_date"            : wf.split_date,
+        "split_date"            : wf_local.split_date,
         "in_sample": {
-            "trades"            : wf.in_sample_trades,
-            "win_rate_pct"      : wf.in_sample_win_rate,
-            "profit_factor"     : wf.in_sample_pf,
-            "return_pct"        : wf.in_sample_return_pct,
+            "trades"            : wf_local.in_sample_trades,
+            "win_rate_pct"      : wf_local.in_sample_win_rate,
+            "profit_factor"     : wf_local.in_sample_pf,
+            "return_pct"        : wf_local.in_sample_return_pct,
         },
         "out_of_sample": {
-            "trades"            : wf.out_sample_trades,
-            "win_rate_pct"      : wf.out_sample_win_rate,
-            "profit_factor"     : wf.out_sample_pf,
-            "return_pct"        : wf.out_sample_return_pct,
+            "trades"            : wf_local.out_sample_trades,
+            "win_rate_pct"      : wf_local.out_sample_win_rate,
+            "profit_factor"     : wf_local.out_sample_pf,
+            "return_pct"        : wf_local.out_sample_return_pct,
         },
-        "degradation_pct"       : wf.degradation_pct,
-        "is_robust"             : wf.is_robust,
+        "degradation_pct"       : wf_local.degradation_pct,
+        "is_robust"             : wf_local.is_robust,
         "verdict"               : (
-            " ROBUST: OOS performance within acceptable degradation."
-            if wf.is_robust
-            else " NOT ROBUST: OOS performance degraded >30% vs in-sample."
+            "✅ ROBUST: OOS performance within acceptable degradation."
+            if wf_local.is_robust
+            else "⚠️ NOT ROBUST: OOS performance degraded >30% vs in-sample."
         ),
     }
 
-    return {"statistical_audit": audit, "walk_forward": wf_dict}
+    output = {"statistical_audit": audit, "walk_forward": wf_dict}
+
+    # ── [v7] Monte Carlo Equity Reshuffling ──────────────────────
+    # Block bootstrap — preserves autocorrelation. Win/loss streaks intact.
+    if monte_carlo_equity_reshuffling is not None and len(result.trades) >= 20:
+        try:
+            pnls = np.array([t.pnl_usd for t in result.trades])
+            mc   = monte_carlo_equity_reshuffling(pnls, n_trials=2000)
+            output["monte_carlo_v7"] = {
+                "median_final_equity_usd" : round(float(mc.get("median_final_equity", 0)), 2),
+                "p5_final_equity_usd"     : round(float(mc.get("p5_final_equity", 0)), 2),
+                "p95_final_equity_usd"    : round(float(mc.get("p95_final_equity", 0)), 2),
+                "ruin_probability_pct"    : round(float(mc.get("ruin_probability_pct", 0)), 2),
+                "median_max_drawdown_pct" : round(float(mc.get("median_max_drawdown_pct", 0)), 2),
+                "p95_max_drawdown_pct"    : round(float(mc.get("p95_max_drawdown_pct", 0)), 2),
+                "positive_return_pct"     : round(float(mc.get("positive_return_probability_pct", 0)), 2),
+                "n_trials"                : 2000,
+                "engine"                  : "apex_v7_block_bootstrap",
+            }
+        except Exception as e:
+            output["monte_carlo_v7"] = {"error": str(e)}
+
+    # ── [v7] Rolling Walk-Forward (multi-window IS/OOS) ──────────
+    if rolling_walk_forward is not None and len(result.trades) >= 30:
+        try:
+            pnl_series = pd.Series(
+                [t.pnl_pct / 100.0 for t in result.trades],
+                index=pd.to_datetime([t.entry_date for t in result.trades])
+            ).sort_index()
+            rwf = rolling_walk_forward(pnl_series)
+            output["rolling_walk_forward_v7"] = {
+                "windows_tested"   : rwf.get("n_windows", 0),
+                "avg_oos_sharpe"   : round(float(rwf.get("avg_oos_sharpe", 0)), 3),
+                "avg_oos_return"   : round(float(rwf.get("avg_oos_return", 0)), 4),
+                "consistency_score": round(float(rwf.get("consistency_score", 0)), 3),
+                "is_consistent"    : bool(rwf.get("is_consistent", False)),
+                "verdict"          : rwf.get("verdict", "Insufficient data"),
+                "engine"           : "apex_v7_rolling_wf",
+            }
+        except Exception as e:
+            output["rolling_walk_forward_v7"] = {"error": str(e)}
+
+    # ── [v7] calculate_quant_metrics (VaR / CVaR / Lo Sharpe) ───
+    if calculate_quant_metrics is not None and len(result.trades) >= 10:
+        try:
+            ret_arr = np.array([t.pnl_pct / 100.0 for t in result.trades])
+            dates   = pd.to_datetime([t.entry_date for t in result.trades])
+            df_rets = pd.DataFrame(
+                {"Close": np.cumprod(1 + ret_arr) * result.config.initial_balance},
+                index=dates
+            )
+            qm = calculate_quant_metrics(df_rets)
+            output["quant_metrics_v7"] = {
+                "sharpe_lo_adjusted" : round(float(qm.get("sharpe_lo_adj", 0)), 3),
+                "deflated_sharpe"    : round(float(qm.get("deflated_sharpe", 0)), 3),
+                "var_95_pct"         : round(float(qm.get("var_95_pct", 0)), 3),
+                "cvar_95_pct"        : round(float(qm.get("cvar_95_pct", 0)), 3),
+                "omega_ratio"        : round(float(qm.get("omega_ratio", 0)), 3),
+                "tail_ratio"         : round(float(qm.get("tail_ratio", 0)), 3),
+                "engine"             : "apex_v7_quant_metrics",
+            }
+        except Exception:
+            pass
+
+    return output
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1735,24 +1916,24 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
             from app.engine.apex_equity_armor import EquityArmor, ArmorConfig
             armor_cfg = ArmorConfig(
                 initial_balance           = config.initial_balance,
-                trailing_stop_pct         = 0.15,
-                trailing_warning_pct      = 0.08,
-                target_vol_ann            = 0.15,
-                max_vol_ann               = 0.50,
+                trailing_stop_pct         = 0.25,      # v5: longgarkan
+                trailing_warning_pct      = 0.12,      # v5: longgarkan
+                target_vol_ann            = 0.20,      # v5: naikkan
+                max_vol_ann               = 0.65,      # v5: naikkan
                 eq_fast_ma                = 10,
                 eq_slow_ma                = 20,
                 eq_ultra_ma               = 50,
-                edge_rolling_window       = 20,
-                min_win_rate              = 0.42,
-                min_sharpe                = 0.40,
-                min_profit_factor         = 1.05,
-                max_consec_losses         = 6,
+                edge_rolling_window       = 30,        # v5: naikkan window
+                min_win_rate              = 0.35,      # v5: turunkan
+                min_sharpe                = 0.20,      # v5: turunkan
+                min_profit_factor         = 0.85,      # v5: turunkan
+                max_consec_losses         = 8,         # v5: naikkan
                 base_kelly_fraction       = config.kelly_fraction,
                 aggressive_kelly_fraction = min(config.kelly_fraction * 1.5, 0.40),
-                reserve_rate              = 0.10,
+                reserve_rate              = 0.05,      # v5: turunkan
                 reserve_locked            = True,
-                dd_velocity_window        = 10,
-                dd_velocity_halt_pct      = 8.0,
+                dd_velocity_window        = 15,        # v5: naikkan
+                dd_velocity_halt_pct      = 15.0,     # v5: naikkan
                 max_drawdown_target       = config.circuit_breaker_dd / 100.0,
             )
             armor = EquityArmor(armor_cfg)
@@ -1927,18 +2108,20 @@ def run_simulation(config: SimulationConfig) -> SimulationResult:
                 tech=tech, direction=direction, df_slice=df_slice,
             )
 
-            if quality_score >= 90:   base_size_scale = 1.00
-            elif quality_score >= 75: base_size_scale = 0.80
-            elif quality_score >= 60: base_size_scale = 0.60
-            elif quality_score >= 45: base_size_scale = 0.40
-            else:                     base_size_scale = 0.22
+            if quality_score >= 90:   base_size_scale = 1.20  # v5: boost A+
+            elif quality_score >= 75: base_size_scale = 1.00  # v5: boost A
+            elif quality_score >= 60: base_size_scale = 0.80  # v5: boost B
+            elif quality_score >= 45: base_size_scale = 0.60  # v5: boost C
+            else:                     base_size_scale = 0.40  # v5: boost D
 
             if "BULLISH" in regime or "LOW_VOL" in regime:
                 regime_scale = config.regime_size_bull
             elif "SIDEWAYS" in regime or "CHOP" in regime:
                 regime_scale = config.regime_size_chop
+            elif regime in ("UNKNOWN", ""):
+                regime_scale = 0.80   # v5: UNKNOWN bukan alasan untuk severely penalize
             else:
-                regime_scale = 0.50
+                regime_scale = 0.70   # v5: naikkan 0.50→0.70 untuk bearish/other
 
             # [v5] Final scale = quality × regime × MTF × armor
             size_scale = float(np.clip(
@@ -2188,24 +2371,24 @@ def run_simulation_stream(config: "SimulationConfig"):
                 from app.engine.apex_equity_armor import EquityArmor, ArmorConfig as _ArmorCfg
                 armor = EquityArmor(_ArmorCfg(
                     initial_balance           = config.initial_balance,
-                    trailing_stop_pct         = 0.15,
-                    trailing_warning_pct      = 0.08,
-                    target_vol_ann            = 0.15,
-                    max_vol_ann               = 0.50,
+                    trailing_stop_pct         = 0.25,      # v5: longgarkan
+                    trailing_warning_pct      = 0.12,      # v5: longgarkan
+                    target_vol_ann            = 0.20,      # v5: naikkan
+                    max_vol_ann               = 0.65,      # v5: naikkan
                     eq_fast_ma                = 10,
                     eq_slow_ma                = 20,
                     eq_ultra_ma               = 50,
-                    edge_rolling_window       = 20,
-                    min_win_rate              = 0.42,
-                    min_sharpe                = 0.40,
-                    min_profit_factor         = 1.05,
-                    max_consec_losses         = 6,
+                    edge_rolling_window       = 30,        # v5: naikkan window
+                    min_win_rate              = 0.35,      # v5: turunkan
+                    min_sharpe                = 0.20,      # v5: turunkan
+                    min_profit_factor         = 0.85,      # v5: turunkan
+                    max_consec_losses         = 8,         # v5: naikkan
                     base_kelly_fraction       = config.kelly_fraction,
                     aggressive_kelly_fraction = min(config.kelly_fraction * 1.5, 0.40),
-                    reserve_rate              = 0.10,
+                    reserve_rate              = 0.05,      # v5: turunkan
                     reserve_locked            = True,
-                    dd_velocity_window        = 10,
-                    dd_velocity_halt_pct      = 8.0,
+                    dd_velocity_window        = 15,        # v5: naikkan
+                    dd_velocity_halt_pct      = 15.0,     # v5: naikkan
                     max_drawdown_target       = config.circuit_breaker_dd / 100.0,
                 ))
             except ImportError:
@@ -2376,14 +2559,15 @@ def run_simulation_stream(config: "SimulationConfig"):
                     score=score, regime_conf=regime_conf, ict_signal=signal,
                     tech=tech, direction=direction, df_slice=df_slice,
                 )
-                if   quality_score >= 90: base_ss = 1.00
-                elif quality_score >= 75: base_ss = 0.80
-                elif quality_score >= 60: base_ss = 0.60
-                elif quality_score >= 45: base_ss = 0.40
-                else:                     base_ss = 0.22
+                if   quality_score >= 90: base_ss = 1.20   # v5: boost A+
+                elif quality_score >= 75: base_ss = 1.00   # v5: boost A
+                elif quality_score >= 60: base_ss = 0.80   # v5: boost B
+                elif quality_score >= 45: base_ss = 0.60   # v5: boost C
+                else:                     base_ss = 0.40   # v5: boost D
                 if   "BULLISH" in regime or "LOW_VOL" in regime: rs = config.regime_size_bull
                 elif "SIDEWAYS" in regime or "CHOP"   in regime: rs = config.regime_size_chop
-                else:                                              rs = 0.50
+                elif regime in ("UNKNOWN", ""):                   rs = 0.80   # v5: UNKNOWN tidak severe penalty
+                else:                                              rs = 0.70   # v5: naikkan dari 0.50
                 size_scale = float(np.clip(base_ss * rs * mtf_boost * armor_risk_scale, 0.05, 1.5))
                 kelly_risk_pct, kelly_frac = _compute_adaptive_kelly(
                     closed_trades, config, config.risk_per_trade, consec_loss
