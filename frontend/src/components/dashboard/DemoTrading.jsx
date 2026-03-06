@@ -35,7 +35,7 @@ const today  = ()         => new Date().toISOString().split('T')[0];
 const isCrypto = (t)      => t?.endsWith('-USD') || t?.endsWith('USDT') || t?.endsWith('-USDT');
 
 // ─── Verdict color ────────────────────────────────────────────────
-const verdictColor = (v) => v === 'BULLISH' ? 'var(--pos)' : v === 'BEARISH' ? 'var(--neg)' : 'var(--ink2)';
+const verdictColor = (v) => v === 'BULLISH' ? 'var(--pos)' : v === 'BEARISH' ? 'var(--neg)' : 'var(--ink3)';
 
 // ─── Mini equity curve SVG ────────────────────────────────────────
 const EquityCurve = ({ data = [], w = 284, h = 72 }) => {
@@ -53,7 +53,7 @@ const EquityCurve = ({ data = [], w = 284, h = 72 }) => {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const isPos = vals[vals.length - 1] >= vals[0];
-  const color = isPos ? '#22c55e' : '#ef4444';
+  const color = isPos ? "var(--pos)" : "var(--neg)";
   return (
     <svg width={w} height={h} style={{ display: 'block' }}>
       <defs>
@@ -98,7 +98,7 @@ const makeAccount = (balance = 10000) => ({
   equityCurve:    [{ date: today(), balance }],
 });
 
-const MODE_COLOR = { FULL: 'var(--pos)', REDUCED: 'var(--amber)', DEFENSIVE: 'var(--neg)', HALTED: 'var(--neg)' };
+const MODE_COLOR = { FULL: 'var(--pos)', REDUCED: 'var(--ink2)', DEFENSIVE: 'var(--neg)', HALTED: 'var(--neg)' };
 
 // ─────────────────────────────────────────────────────────────────
 //  MAIN COMPONENT
@@ -936,17 +936,17 @@ export default function DemoTrading() {
     return (
       <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 60 }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '44px 52px', width: 500, textAlign: 'center' }}>
-          <div style={{ width: 56, height: 56, background: 'var(--accent)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', boxShadow: '0 0 32px var(--accent-glow)' }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 800, color: '#fff' }}>DT</span>
+          <div style={{ width: 56, height: 56, background: 'var(--ink)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 22px', boxShadow: '0 0 32px rgba(255,255,255,0.06)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 600, color: 'var(--bg)' }}>DT</span>
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.025em', color: 'var(--ink)', marginBottom: 7 }}>Demo Trading</h2>
+          <h2 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.025em', color: 'var(--ink)', marginBottom: 7 }}>Demo Trading</h2>
           <p style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.14em', color: 'var(--ink3)', marginBottom: 34, textTransform: 'uppercase' }}>Paper Account · Risk-Free Simulation</p>
 
           <div style={{ marginBottom: 24, textAlign: 'left' }}>
             <p style={{ fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink4)', marginBottom: 10 }}>Virtual Deposit</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
               {[10000, 25000, 50000, 100000].map(amt => (
-                <button key={amt} onClick={() => setDeposit(amt)} style={{ padding: '11px 0', background: deposit === amt ? 'var(--accent)' : 'var(--surface2)', border: `1px solid ${deposit === amt ? 'transparent' : 'var(--border)'}`, borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: deposit === amt ? '#fff' : 'var(--ink2)' }}>
+                <button key={amt} onClick={() => setDeposit(amt)} style={{ padding: '11px 0', background: deposit === amt ? 'var(--ink2)' : 'var(--surface2)', border: `1px solid ${deposit === amt ? 'transparent' : 'var(--border)'}`, borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: deposit === amt ? '#fff' : 'var(--ink2)' }}>
                   ${(amt / 1000).toFixed(0)}K
                 </button>
               ))}
@@ -969,7 +969,7 @@ export default function DemoTrading() {
             ))}
           </div>
 
-          <button onClick={handleSetup} style={{ width: '100%', background: 'var(--accent)', border: 'none', borderRadius: 11, padding: '15px 0', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#fff', cursor: 'pointer', boxShadow: '0 0 28px var(--accent-glow)' }}>
+          <button onClick={handleSetup} style={{ width: '100%', background: 'var(--ink)', border: 'none', borderRadius: 11, padding: '15px 0', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--bg)', cursor: 'pointer', boxShadow: '0 0 28px rgba(255,255,255,0.06)' }}>
             Start with ${Number(deposit).toLocaleString()}
           </button>
         </div>
@@ -990,7 +990,7 @@ export default function DemoTrading() {
           background: notification.type === 'success' ? '#16a34a' : notification.type === 'error' ? '#dc2626' : 'var(--surface)',
           border: `1px solid ${notification.type === 'success' ? '#16a34a' : notification.type === 'error' ? '#dc2626' : 'var(--border)'}`,
           borderRadius: 10, padding: '12px 20px', maxWidth: 380,
-          fontFamily: 'var(--mono)', fontSize: 10, color: '#fff',
+          fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--bg)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           animation: 'slideIn 0.3s ease',
         }}>
@@ -1038,7 +1038,7 @@ export default function DemoTrading() {
           <button key={id} onClick={() => setMainTab(id)} style={{
             flex: 1, padding: '11px 0', border: 'none', cursor: 'pointer',
             background: mainTab === id ? 'var(--surface2)' : 'transparent',
-            borderBottom: mainTab === id ? '2px solid var(--accent)' : '2px solid transparent',
+            borderBottom: mainTab === id ? '2px solid var(--ink2)' : '2px solid transparent',
             fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.10em',
             textTransform: 'uppercase',
             color: mainTab === id ? 'var(--ink)' : 'var(--ink4)',
@@ -1075,7 +1075,7 @@ export default function DemoTrading() {
                   placeholder="Add ticker…"
                   style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink)', width: 110 }}
                 />
-                <button onClick={addToWatchlist} style={{ background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 8, color: '#fff', cursor: 'pointer', letterSpacing: '0.08em' }}>+</button>
+                <button onClick={addToWatchlist} style={{ background: 'var(--ink)', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--bg)', cursor: 'pointer', letterSpacing: '0.08em' }}>+</button>
               </div>
             </div>
 
@@ -1097,7 +1097,7 @@ export default function DemoTrading() {
                     const y = h - pad - ((v - min) / range) * (h - pad * 2);
                     return `${x.toFixed(1)},${y.toFixed(1)}`;
                   }).join(' ');
-                  const color = isPos ? '#22c55e' : '#ef4444';
+                  const color = isPos ? "var(--pos)" : "var(--neg)";
                   return (
                     <svg width={w} height={h} style={{ display: 'block' }}>
                       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
@@ -1109,7 +1109,7 @@ export default function DemoTrading() {
                   <div
                     key={tk}
                     onClick={() => { setChartTicker(tk); loadStandaloneChart(tk, chartPanelTf); }}
-                    style={{ background: 'var(--surface2)', border: `1px solid ${standaloneChart?.ticker === tk ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 9, padding: '10px 11px', cursor: 'pointer', position: 'relative', transition: 'border-color .15s' }}
+                    style={{ background: 'var(--surface2)', border: `1px solid ${standaloneChart?.ticker === tk ? 'var(--ink2)' : 'var(--border)'}`, borderRadius: 9, padding: '10px 11px', cursor: 'pointer', position: 'relative', transition: 'border-color .15s' }}
                   >
                     {/* Remove btn */}
                     <button
@@ -1158,7 +1158,7 @@ export default function DemoTrading() {
                   {/* TF buttons */}
                   <div style={{ display: 'flex', gap: 3 }}>
                     {['1D','1W','1M','1Y'].map(tf => (
-                      <button key={tf} onClick={() => setChartPanelTf(tf)} style={{ background: chartPanelTf === tf ? 'var(--accent)' : 'transparent', color: chartPanelTf === tf ? '#fff' : 'var(--ink3)', border: `1px solid ${chartPanelTf === tf ? 'transparent' : 'var(--border)'}`, borderRadius: 5, padding: '3px 9px', fontFamily: 'var(--mono)', fontSize: 8, fontWeight: chartPanelTf === tf ? 600 : 400, letterSpacing: '0.10em', cursor: 'pointer' }}>{tf}</button>
+                      <button key={tf} onClick={() => setChartPanelTf(tf)} style={{ background: chartPanelTf === tf ? 'var(--ink2)' : 'transparent', color: chartPanelTf === tf ? '#fff' : 'var(--ink3)', border: `1px solid ${chartPanelTf === tf ? 'transparent' : 'var(--border)'}`, borderRadius: 5, padding: '3px 9px', fontFamily: 'var(--mono)', fontSize: 8, fontWeight: chartPanelTf === tf ? 600 : 400, letterSpacing: '0.10em', cursor: 'pointer' }}>{tf}</button>
                     ))}
                   </div>
                 </div>
@@ -1200,7 +1200,7 @@ export default function DemoTrading() {
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 5px var(--accent-glow)' }} />
+                <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--ink)', boxShadow: '0 0 5px rgba(255,255,255,0.06)' }} />
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Signal Generator</span>
               </div>
               <span className="badge badge-accent">Apex Engine v6</span>
@@ -1215,7 +1215,7 @@ export default function DemoTrading() {
                 placeholder="BBCA.JK, NVDA, BTC-USD, ETH-USD…"
                 style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink)' }}
               />
-              <button onClick={generateSignal} disabled={sigLoading || !sigTicker.trim()} style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '10px 22px', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#fff', cursor: 'pointer', opacity: sigLoading || !sigTicker.trim() ? 0.5 : 1 }}>
+              <button onClick={generateSignal} disabled={sigLoading || !sigTicker.trim()} style={{ background: 'var(--ink)', border: 'none', borderRadius: 8, padding: '10px 22px', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--bg)', cursor: 'pointer', opacity: sigLoading || !sigTicker.trim() ? 0.5 : 1 }}>
                 {sigLoading ? 'Scanning…' : 'Analyze →'}
               </button>
             </div>
@@ -1267,7 +1267,7 @@ export default function DemoTrading() {
                       { label: 'Apex Score', value: `${score}/100`,       color: score >= 70 ? 'var(--pos)' : score <= 30 ? 'var(--neg)' : 'var(--ink)' },
                       { label: 'Price',      value: price ? fmt(price, price < 10 ? 4 : 2) : '—', color: 'var(--ink)' },
                       { label: 'Trade Gate', value: sig.trade_gate ?? '—', color: sig.trade_gate === 'OPEN' ? 'var(--pos)' : 'var(--neg)' },
-                      { label: 'Regime',     value: (hmm.current_regime ?? '—').replace(/_/g,' '), color: 'var(--blue)' },
+                      { label: 'Regime',     value: (hmm.current_regime ?? '—').replace(/_/g,' '), color: 'var(--ink2)' },
                     ].map(({ label, value, color }) => (
                       <div key={label} style={{ textAlign: 'center', padding: '12px 6px', borderRight: '1px solid var(--border)' }}>
                         <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)', marginBottom: 5, letterSpacing: '0.10em', textTransform: 'uppercase' }}>{label}</p>
@@ -1325,7 +1325,7 @@ export default function DemoTrading() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Apex Setup Recommendation</span>
-                          <span className={`badge ${tradeSetup.confidence === 'HIGH' ? 'badge-green' : tradeSetup.confidence === 'MEDIUM' ? 'badge-amber' : 'badge-red'}`} style={{ fontSize: 9 }}>
+                          <span className={`badge ${tradeSetup.confidence === 'HIGH' ? 'badge-green' : tradeSetup.confidence === 'MEDIUM' ? 'badge-muted' : 'badge-red'}`} style={{ fontSize: 9 }}>
                             {tradeSetup.confidence} CONF
                           </span>
                         </div>
@@ -1366,7 +1366,7 @@ export default function DemoTrading() {
                         <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)' }}>Kelly-adjusted · Risk scale {fmt(riskScale * 100, 0)}%</p>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 800, color: 'var(--amber)', letterSpacing: '-0.02em' }}>{fmtUSD(riskRec.dollar_risk ?? 0)}</p>
+                        <p style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color: 'var(--ink2)', letterSpacing: '-0.02em' }}>{fmtUSD(riskRec.dollar_risk ?? 0)}</p>
                         <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)' }}>{fmt(riskRec.risk_pct ?? 0, 3)}% of equity</p>
                       </div>
                     </div>
@@ -1401,7 +1401,7 @@ export default function DemoTrading() {
                   <p style={LBL}>Order Type</p>
                   <div style={{ display: 'flex', gap: 5 }}>
                     {['MARKET','LIMIT'].map(t => (
-                      <button key={t} onClick={() => setForm(f => ({ ...f, orderType: t }))} style={{ flex: 1, padding: '9px 0', cursor: 'pointer', background: form.orderType === t ? 'var(--accent)' : 'var(--surface)', border: `1px solid ${form.orderType === t ? 'transparent' : 'var(--border)'}`, borderRadius: 7, fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: form.orderType === t ? '#fff' : 'var(--ink3)' }}>{t}</button>
+                      <button key={t} onClick={() => setForm(f => ({ ...f, orderType: t }))} style={{ flex: 1, padding: '9px 0', cursor: 'pointer', background: form.orderType === t ? 'var(--ink2)' : 'var(--surface)', border: `1px solid ${form.orderType === t ? 'transparent' : 'var(--border)'}`, borderRadius: 7, fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: form.orderType === t ? '#fff' : 'var(--ink3)' }}>{t}</button>
                     ))}
                   </div>
                 </div>
@@ -1418,15 +1418,15 @@ export default function DemoTrading() {
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                           {form.entryPrice ? `≈ ${fmt(Number(form.entryPrice), Number(form.entryPrice) < 10 ? 4 : 2)}` : 'Fetched at submit'}
                         </span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--accent)' }}>LIVE ●</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink2)' }}>LIVE ●</span>
                       </div>
                       <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink4)', marginTop: 3 }}>Harga final = live price saat submit</p>
                     </>
                   ) : (
                     <>
                       <p style={LBL}>Limit Price</p>
-                      <input type="number" value={form.limitPrice} onChange={e => setForm(f => ({ ...f, limitPrice: e.target.value }))} placeholder="0.00" style={{ ...INPUT, borderColor: 'var(--amber)' }} />
-                      <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber)', marginTop: 3 }}>Eksekusi otomatis saat harga menyentuh limit</p>
+                      <input type="number" value={form.limitPrice} onChange={e => setForm(f => ({ ...f, limitPrice: e.target.value }))} placeholder="0.00" style={{ ...INPUT, borderColor: 'var(--ink2)' }} />
+                      <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)', marginTop: 3 }}>Eksekusi otomatis saat harga menyentuh limit</p>
                     </>
                   )}
                 </div>
@@ -1447,7 +1447,7 @@ export default function DemoTrading() {
                 <button
                   onClick={openPosition}
                   disabled={execBusy || !form.ticker || (form.orderType === 'LIMIT' && !form.limitPrice)}
-                  style={{ background: form.direction === 'LONG' ? 'var(--pos)' : 'var(--neg)', border: 'none', borderRadius: 8, padding: '9px 24px', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#fff', cursor: execBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: (execBusy || !form.ticker || (form.orderType === 'LIMIT' && !form.limitPrice)) ? 0.5 : 1, transition: 'all .15s', minWidth: 140 }}
+                  style={{ background: form.direction === 'LONG' ? 'var(--pos)' : 'var(--neg)', border: 'none', borderRadius: 8, padding: '9px 24px', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'var(--bg)', cursor: execBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: (execBusy || !form.ticker || (form.orderType === 'LIMIT' && !form.limitPrice)) ? 0.5 : 1, transition: 'all .15s', minWidth: 140 }}
                 >
                   {execBusy
                     ? '⏳ Fetching price…'
@@ -1467,7 +1467,7 @@ export default function DemoTrading() {
                 { id: 'pending',   label: `Pending (${account.openPositions.filter(p => p.status === 'PENDING').length})` },
                 { id: 'history',   label: `History (${account.closedTrades.length})` },
               ].map(({ id, label }) => (
-                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: '13px 16px', border: 'none', cursor: 'pointer', background: tab === id ? 'var(--surface2)' : 'transparent', borderBottom: tab === id ? '2px solid var(--accent)' : '2px solid transparent', fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.10em', textTransform: 'uppercase', color: tab === id ? 'var(--ink)' : 'var(--ink3)' }}>{label}</button>
+                <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: '13px 16px', border: 'none', cursor: 'pointer', background: tab === id ? 'var(--surface2)' : 'transparent', borderBottom: tab === id ? '2px solid var(--ink2)' : '2px solid transparent', fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.10em', textTransform: 'uppercase', color: tab === id ? 'var(--ink)' : 'var(--ink3)' }}>{label}</button>
               ))}
             </div>
 
@@ -1581,10 +1581,10 @@ export default function DemoTrading() {
                       <div key={pos.id} style={{ display: 'grid', gridTemplateColumns: '80px 54px 100px 90px 90px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center', gap: 4 }}>
                         <p style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{pos.ticker}</p>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: pos.direction === 'LONG' ? 'var(--pos)' : 'var(--neg)' }}>{pos.direction}</span>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}>{fmt(pos.limitPrice, pos.limitPrice < 10 ? 4 : 2)}</span>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>{fmt(pos.limitPrice, pos.limitPrice < 10 ? 4 : 2)}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink2)' }}>{liveP ? fmt(liveP, liveP < 10 ? 4 : 2) : '—'}</span>
                         <div>
-                          <span className="badge badge-amber" style={{ fontSize: 9 }}>PENDING</span>
+                          <span className="badge badge-muted" style={{ fontSize: 9 }}>PENDING</span>
                           {dist != null && <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink4)', marginTop: 2 }}>{fmt(dist, 2)}% away</p>}
                         </div>
                         <button
@@ -1652,7 +1652,7 @@ export default function DemoTrading() {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}> Equity Armor</span>
               {armorBusy
                 ? <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink4)' }}>updating…</span>
-                : <span className={`badge ${armorMode === 'FULL' || armorMode === 'ACTIVE' ? 'badge-green' : armorMode === 'REDUCED' ? 'badge-amber' : 'badge-red'}`}>{armorMode}</span>
+                : <span className={`badge ${armorMode === 'FULL' || armorMode === 'ACTIVE' ? 'badge-green' : armorMode === 'REDUCED' ? 'badge-muted' : 'badge-red'}`}>{armorMode}</span>
               }
             </div>
             <div style={{ marginBottom: 14 }}>
@@ -1743,7 +1743,7 @@ export default function DemoTrading() {
       {closeMeta && previewPos && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '36px 40px', width: 420 }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', marginBottom: 5 }}>Close Position</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Close Position</h3>
             <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)', marginBottom: 8 }}>
               {previewPos.direction} {previewPos.ticker} · entry @ {fmt(previewPos.entryPrice || previewPos.limitPrice, 4)}
             </p>
@@ -1762,11 +1762,11 @@ export default function DemoTrading() {
                 <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>Estimated P&L</p>
                 <p style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)' }}>{fmt(previewPos.shares, 4)} shares × Δ{fmt(previewExit - (previewPos.entryPrice || previewPos.limitPrice), 4)}</p>
               </div>
-              <p style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: previewPnl >= 0 ? 'var(--pos)' : 'var(--neg)', letterSpacing: '-0.03em' }}>{fmtUSD(previewPnl)}</p>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 600, color: previewPnl >= 0 ? 'var(--pos)' : 'var(--neg)', letterSpacing: '-0.03em' }}>{fmtUSD(previewPnl)}</p>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setCloseMeta(null)} style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 9, padding: '12px 0', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink3)', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={closePosition} style={{ flex: 2, background: previewPnl >= 0 ? 'var(--pos)' : 'var(--neg)', border: 'none', borderRadius: 9, padding: '12px 0', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+              <button onClick={closePosition} style={{ flex: 2, background: previewPnl >= 0 ? 'var(--pos)' : 'var(--neg)', border: 'none', borderRadius: 9, padding: '12px 0', fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: 'var(--bg)', cursor: 'pointer' }}>
                 Confirm · {fmtUSD(previewPnl)}
               </button>
             </div>

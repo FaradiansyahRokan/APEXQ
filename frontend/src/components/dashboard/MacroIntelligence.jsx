@@ -71,7 +71,7 @@ export function MacroIntelligence({ apexData }) {
         <p className="section-title" style={{ marginBottom: 0, borderBottom: 'none' }}>
           Macro Intelligence & Factor Decomposition
         </p>
-        <span className="badge badge-muted">APEX v2</span>
+        <span className="badge badge-muted">CREST</span>
       </div>
 
       {/* Row 1 */}

@@ -1,15 +1,15 @@
 import { useState, useCallback } from "react";
 
-const G  = "var(--gold)";
+const G  = "var(--ink)";
 const GN = "var(--green, #10b981)";
 const RD = "var(--red,  #f43f5e)";
-const AM = "var(--amber, #f59e0b)";
-const MN = "var(--mono, 'IBM Plex Mono', monospace)";
+const AM = "var(--ink2)";
+const MN = "var(--mono, 'DM Mono', monospace)";
 import { API } from "../../config";
 const BASE = API;
 
 const Spin = () => (
-  <div style={{ width:14,height:14,border:"1.5px solid rgba(255,255,255,.1)",borderTopColor:G,borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0 }} />
+  <div style={{ width:14,height:14,border:"1.5px solid rgba(255,255,255,.1)",borderTopColor:'var(--ink2)',borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0 }} />
 );
 
 const Badge = ({ label, color=G, size=9 }) => (
@@ -17,14 +17,14 @@ const Badge = ({ label, color=G, size=9 }) => (
 );
 
 const VerdictChip = ({ verdict }) => {
-  const map = { DEPLOY:{bg:"#10b981",text:"#000"}, RESEARCH:{bg:"#3b82f6",text:"#fff"}, DISCARD:{bg:"#f43f5e",text:"#fff"} };
+  const map = { DEPLOY:{bg:"var(--pos)",text:"#000"}, RESEARCH:{bg:"var(--ink2)",text:"#fff"}, DISCARD:{bg:"var(--neg)",text:"#fff"} };
   const key = Object.keys(map).find(k => verdict?.includes(k)) || "RESEARCH";
   const {bg,text} = map[key];
   return <span style={{ background:bg,color:text,fontFamily:MN,fontSize:10,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",padding:"3px 10px",borderRadius:4 }}>{verdict}</span>;
 };
 
 const PassFail = ({ ok, label, detail }) => (
-  <div style={{ display:"flex",alignItems:"baseline",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,.05)" }}>
+  <div style={{ display:"flex",alignItems:"baseline",gap:8,padding:"5px 0",borderBottom:"1px solid var(--border)" }}>
     <span style={{ color:ok?GN:RD,fontFamily:MN,fontSize:11,flexShrink:0 }}>{ok?"":""}</span>
     <span style={{ fontFamily:MN,fontSize:10,color:"var(--ink2)",flex:1 }}>{label}</span>
     <span style={{ fontFamily:MN,fontSize:10,color:ok?GN:RD }}>{detail}</span>
@@ -34,13 +34,13 @@ const PassFail = ({ ok, label, detail }) => (
 const Metric = ({ label, value, color="var(--ink)", sub }) => (
   <div style={{ flex:1,minWidth:100 }}>
     <div style={{ fontFamily:MN,fontSize:8,color:"var(--ink4)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:3 }}>{label}</div>
-    <div style={{ fontFamily:MN,fontSize:18,fontWeight:700,color,fontVariantNumeric:"tabular-nums" }}>{value}</div>
+    <div style={{ fontFamily:MN,fontSize:16,fontWeight:600,color,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em" }}>{value}</div>
     {sub && <div style={{ fontFamily:MN,fontSize:8,color:"var(--ink3)",marginTop:2 }}>{sub}</div>}
   </div>
 );
 
 const SectionHead = ({ children }) => (
-  <div style={{ fontFamily:MN,fontSize:8,color:G,letterSpacing:".2em",textTransform:"uppercase",marginBottom:10,paddingBottom:7,borderBottom:"1px solid var(--border)" }}>{children}</div>
+  <div style={{ fontFamily:MN,fontSize:8,color:'var(--ink4)',letterSpacing:".2em",textTransform:"uppercase",marginBottom:10,paddingBottom:7,borderBottom:"1px solid var(--border)" }}>{children}</div>
 );
 
 const BootstrapBar = ({ lower, upper, observed }) => {
@@ -51,7 +51,7 @@ const BootstrapBar = ({ lower, upper, observed }) => {
   return (
     <div>
       <div style={{ fontFamily:MN,fontSize:9,color:"var(--ink3)",marginBottom:6 }}>Sharpe distribution — 5,000 bootstrap samples (no normality assumption)</div>
-      <div style={{ position:"relative",height:22,background:"var(--surface3)",borderRadius:4,overflow:"hidden" }}>
+      <div style={{ position:"relative",height:22,background:"var(--surface3)",borderRadius:2,overflow:"hidden" }}>
         <div style={{ position:"absolute",top:0,height:"100%",left:pct(lower||0),width:`${((upper-lower)/range)*100}%`,background:(observed>=1.5?"rgba(16,185,129,.25)":"rgba(244,63,94,.25)") }} />
         <div style={{ position:"absolute",top:0,height:"100%",left:pct(1.0),width:1,background:"rgba(255,255,255,.2)" }} />
         <div style={{ position:"absolute",top:0,height:"100%",left:pct(1.5),width:1,background:`${G}66` }} />
@@ -67,7 +67,7 @@ const BootstrapBar = ({ lower, upper, observed }) => {
 };
 
 const CVarRow = ({ label, var_, cvar_ }) => (
-  <div style={{ display:"flex",alignItems:"center",gap:12,padding:"4px 0",borderBottom:"1px solid rgba(255,255,255,.04)" }}>
+  <div style={{ display:"flex",alignItems:"center",gap:12,padding:"4px 0",borderBottom:"1px solid var(--border)" }}>
     <Badge label={label} color={AM} size={8} />
     <div style={{ flex:1 }} />
     <div style={{ fontFamily:MN,fontSize:10,color:RD,minWidth:70,textAlign:"right" }}>VaR {var_?.toFixed(2)}%</div>
@@ -123,8 +123,8 @@ export default function InstitutionalAuditPanel() {
   return (
     <div style={{ paddingTop:40,paddingBottom:80,maxWidth:900 }}>
       <div style={{ marginBottom:32 }}>
-        <Badge label="Institutional Audit · Phase 2-4" color={G} size={9} />
-        <h1 style={{ fontSize:30,fontWeight:800,letterSpacing:"-.02em",color:"var(--ink)",margin:"10px 0 8px" }}>Statistical Validity & Risk Report</h1>
+        <Badge label="Institutional Audit · Phase 2-4" color="var(--ink3)" size={9} />
+        <h1 style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontWeight:300,letterSpacing:"-.02em",color:"var(--ink)",margin:"10px 0 8px" }}>Statistical Validity & Risk Report</h1>
         <p style={{ fontSize:13,color:"var(--ink2)",lineHeight:1.7,maxWidth:620 }}>
           Validates return series against institutional deployment criteria: Lo-adjusted Sharpe · DSR · Bootstrap CI · CVaR 95/99 · Tail Ratio.
         </p>
@@ -137,14 +137,14 @@ export default function InstitutionalAuditPanel() {
             <div style={{ fontFamily:MN,fontSize:8,color:"var(--ink4)",letterSpacing:".1em",marginBottom:5 }}>TICKER</div>
             <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())}
               onKeyDown={e=>e.key==="Enter"&&run()}
-              style={{ background:"var(--surface3)",border:"1px solid var(--border)",borderRadius:6,padding:"8px 14px",fontFamily:MN,fontSize:13,fontWeight:700,color:"var(--ink)",width:110,outline:"none" }} />
+              style={{ background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:4,padding:"8px 14px",fontFamily:MN,fontSize:12,fontWeight:500,color:"var(--ink)",width:110,outline:"none" }} />
           </div>
           <div>
             <div style={{ fontFamily:MN,fontSize:8,color:"var(--ink4)",letterSpacing:".1em",marginBottom:5 }}>STRATEGIES TESTED (DSR)</div>
             <input type="number" min={1} value={nTrials} onChange={e=>setNTrials(parseInt(e.target.value)||1)}
-              style={{ background:"var(--surface3)",border:"1px solid var(--border)",borderRadius:6,padding:"8px 14px",fontFamily:MN,fontSize:13,color:"var(--ink)",width:90,outline:"none" }} />
+              style={{ background:"var(--surface2)",border:"1px solid var(--border2)",borderRadius:4,padding:"8px 14px",fontFamily:MN,fontSize:12,color:"var(--ink)",width:90,outline:"none" }} />
           </div>
-          <button onClick={run} disabled={loading} style={{ background:loading?"var(--surface3)":G,border:"none",color:loading?"var(--ink3)":"#000",padding:"9px 26px",borderRadius:8,fontSize:12,fontWeight:700,fontFamily:MN,letterSpacing:".06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:8,cursor:loading?"not-allowed":"pointer" }}>
+          <button onClick={run} disabled={loading} style={{ background:loading?'var(--surface3)':'var(--ink)',border:"none",color:loading?'var(--ink3)':'var(--bg)',padding:"9px 26px",borderRadius:8,fontSize:12,fontWeight:700,fontFamily:MN,letterSpacing:".06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:8,cursor:loading?"not-allowed":"pointer" }}>
             {loading ? <><Spin /> Analysing…</> : "⬡ Run Audit"}
           </button>
         </div>
@@ -167,7 +167,7 @@ export default function InstitutionalAuditPanel() {
           <div style={{ display:"flex",gap:4,marginBottom:20 }}>
             {TABS.map(t => {
               const active = tab === t.id;
-              return <button key={t.id} onClick={()=>setTab(t.id)} style={{ background:active?G:"var(--surface3)",border:`1px solid ${active?"transparent":"var(--border)"}`,borderRadius:6,padding:"7px 18px",fontFamily:MN,fontSize:9,fontWeight:active?700:400,letterSpacing:".1em",textTransform:"uppercase",color:active?"#000":"var(--ink2)",cursor:"pointer" }}>{t.label}</button>;
+              return <button key={t.id} onClick={()=>setTab(t.id)} style={{ background:active?'var(--ink)':"var(--surface3)",border:`1px solid ${active?"transparent":"var(--border)"}`,borderRadius:6,padding:"7px 18px",fontFamily:MN,fontSize:9,fontWeight:active?700:400,letterSpacing:".1em",textTransform:"uppercase",color:active?'var(--bg)':"var(--ink2)",cursor:"pointer" }}>{t.label}</button>;
             })}
           </div>
 

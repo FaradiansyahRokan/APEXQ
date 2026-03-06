@@ -28,7 +28,7 @@ const TICKERS = ["BBCA.JK", "BBRI.JK", "NVDA", "BTC-USD"];
 // ─────────────────────────────────────────────────────────────────
 //  Spinner
 // ─────────────────────────────────────────────────────────────────
-const Spinner = ({ size = 20, color = 'var(--accent)' }) => (
+const Spinner = ({ size = 20, color = 'var(--ink3)' }) => (
   <div style={{
     width: size, height: size,
     border: `1.5px solid var(--border2)`,
@@ -45,7 +45,7 @@ const ApexRing = ({ score = 0, verdict = 'NEUTRAL' }) => {
   const r     = 26;
   const circ  = 2 * Math.PI * r;
   const fill  = (score / 100) * circ;
-  const color = score >= 70 ? 'var(--pos)' : score <= 30 ? 'var(--neg)' : 'var(--accent-soft)';
+  const color = score >= 70 ? 'var(--pos)' : score <= 30 ? 'var(--neg)' : 'var(--ink)';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -60,7 +60,7 @@ const ApexRing = ({ score = 0, verdict = 'NEUTRAL' }) => {
       <div>
         <Label size="xs" style={{ marginBottom: 4 }}>APEX Score</Label>
         <p style={{
-          fontSize: 26, fontWeight: 800,
+          fontSize: 26, fontWeight: 600,
           letterSpacing: '-0.04em', lineHeight: 1,
           color, fontVariantNumeric: 'tabular-nums',
         }}>{score}</p>
@@ -110,8 +110,8 @@ const SectionHead = ({ label, badge, badgeType = 'badge-muted' }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{
         width: 4, height: 4, borderRadius: '50%',
-        background: 'var(--accent)',
-        boxShadow: '0 0 6px var(--accent-glow)',
+        background: 'var(--ink)',
+        boxShadow: '0 0 6px rgba(255,255,255,0.06)',
       }} />
       <span style={{
         fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 500,
@@ -309,16 +309,16 @@ function AppInner() {
             placeholder="TICKER"
             style={{
               flex: 1, background: 'none', border: 'none',
-              fontFamily: 'var(--font)', fontSize: 64, fontWeight: 800,
+              fontFamily: 'var(--display)', fontSize: 64, fontWeight: 600,
               color: 'var(--ink)', letterSpacing: '-0.045em',
             }}
           />
           <button onClick={() => fetchData()} style={{
-            background: 'var(--accent)', border: 'none', color: '#fff',
+            background: 'var(--ink)', border: 'none', color: 'var(--bg)',
             padding: '12px 32px', borderRadius: 10,
             fontSize: 13, fontWeight: 600, letterSpacing: '0.02em',
             flexShrink: 0, transition: 'all .2s ease',
-            boxShadow: '0 0 20px var(--accent-glow)',
+            boxShadow: '0 0 20px rgba(255,255,255,0.06)',
           }}
           onMouseEnter={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
           onMouseLeave={e => { e.currentTarget.style.opacity = '1';   e.currentTarget.style.transform = 'translateY(0)'; }}>
@@ -337,9 +337,9 @@ function AppInner() {
               color: 'var(--ink3)', transition: 'all .15s',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'var(--accent-border)';
-              e.currentTarget.style.color = 'var(--accent-soft)';
-              e.currentTarget.style.background = 'var(--accent-dim)';
+              e.currentTarget.style.borderColor = 'var(--border2)';
+              e.currentTarget.style.color = 'var(--ink)';
+              e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
             }}
             onMouseLeave={e => {
               e.currentTarget.style.borderColor = 'var(--border)';
@@ -377,7 +377,7 @@ function AppInner() {
               <div style={{ display: 'flex', gap: 3 }}>
                 {["1D","1W","1M","1Y"].map(tf => (
                   <button key={tf} onClick={() => setMarketTf(tf)} style={{
-                    background: marketTf === tf ? 'var(--accent)' : 'transparent',
+                    background: marketTf === tf ? 'var(--ink2)' : 'transparent',
                     color:      marketTf === tf ? '#fff' : 'var(--ink3)',
                     border: `1px solid ${marketTf === tf ? 'transparent' : 'var(--border)'}`,
                     borderRadius: 5, padding: '3px 11px',
@@ -392,7 +392,7 @@ function AppInner() {
             {marketIndices?.ihsg && (
               <div style={{ textAlign: 'right' }}>
                 <p style={{
-                  fontSize: 40, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1,
+                  fontSize: 40, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1,
                   color: marketIndices.ihsg.current > marketIndices.ihsg.open ? 'var(--pos)' : 'var(--neg)',
                   fontVariantNumeric: 'tabular-nums',
                 }}>
@@ -442,7 +442,7 @@ function AppInner() {
       <div style={{ position: 'relative', width: 56, height: 56 }}>
         <svg width={56} height={56} style={{ transform: 'rotate(-90deg)' }}>
           <circle cx={28} cy={28} r={23} fill="none" stroke="var(--surface3)" strokeWidth={2.5} />
-          <circle cx={28} cy={28} r={23} fill="none" stroke="var(--accent)" strokeWidth={2.5}
+          <circle cx={28} cy={28} r={23} fill="none" stroke="var(--ink2)" strokeWidth={2.5}
             strokeDasharray="36 108" strokeLinecap="round"
             style={{ animation: 'spin 1.1s linear infinite', transformOrigin: 'center' }}
           />
@@ -453,7 +453,7 @@ function AppInner() {
         }}>
           <span style={{
             fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600,
-            color: 'var(--accent)', letterSpacing: '0.04em',
+            color: 'var(--ink2)', letterSpacing: '0.04em',
           }}>AQ</span>
         </div>
       </div>
@@ -462,7 +462,7 @@ function AppInner() {
         letterSpacing: '0.18em', textTransform: 'uppercase',
         color: 'var(--ink3)',
       }}>
-        Gathering data for {ticker}…
+        Running analysis — {ticker}…
       </p>
     </div>
   );
@@ -483,12 +483,12 @@ function AppInner() {
             <span style={{
               fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
               letterSpacing: '0.14em', textTransform: 'uppercase',
-              background: 'var(--accent)', color: '#fff',
+              background: 'var(--ink)', color: 'var(--bg)',
               padding: '4px 12px', borderRadius: 5,
             }}>{data.ticker}</span>
 
             {data.profile?.data_source && (
-              <span className={`badge ${data.profile.data_source === 'BINANCE' ? 'badge-amber' : 'badge-blue'}`}>
+              <span className={`badge ${data.profile.data_source === 'BINANCE' ? 'badge-muted' : 'badge-accent'}`}>
                 {data.profile.data_source}
               </span>
             )}
@@ -504,7 +504,7 @@ function AppInner() {
             <div>
               <Label size="xs" style={{ marginBottom: 8 }}>Real-Time Quote</Label>
               <p style={{
-                fontSize: 54, fontWeight: 800,
+                fontSize: 54, fontWeight: 600,
                 letterSpacing: '-0.045em', lineHeight: 0.9,
                 color: 'var(--ink)', fontVariantNumeric: 'tabular-nums',
               }}>
@@ -551,7 +551,7 @@ function AppInner() {
                     <button key={tf}
                       onClick={() => { setChartTf(tf); fetchData(data.ticker, tf); }}
                       style={{
-                        background: chartTf === tf ? 'var(--accent)' : 'transparent',
+                        background: chartTf === tf ? 'var(--ink2)' : 'transparent',
                         color:      chartTf === tf ? '#fff' : 'var(--ink3)',
                         border: 'none', borderRadius: 5,
                         padding: '4px 12px',
@@ -604,8 +604,8 @@ function AppInner() {
               <Divider style={{ marginBottom: 10 }} />
               {[
                 ['EV per Trade', `${(apexData?.kelly?.expected_value_pct ?? 0) > 0 ? '+' : ''}${(apexData?.kelly?.expected_value_pct ?? 0).toFixed(4)}%`, (apexData?.kelly?.expected_value_pct ?? 0) >= 0 ? 'var(--pos)' : 'var(--neg)'],
-                ['Kelly Edge',   apexData?.kelly?.edge_quality ?? '—',   'var(--amber)'],
-                ['Regime',       (apexData?.statistics?.regime?.market_regime ?? 'UNKNOWN').replace(/_/g,' '), 'var(--blue)'],
+                ['Kelly Edge',   apexData?.kelly?.edge_quality ?? '—',   'var(--ink2)'],
+                ['Regime',       (apexData?.statistics?.regime?.market_regime ?? 'UNKNOWN').replace(/_/g,' '), 'var(--ink2)'],
               ].map(([l, v, c]) => (
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink3)' }}>{l}</span>
@@ -616,7 +616,7 @@ function AppInner() {
           </div>
 
           <div className="card" style={{ padding: 22 }}>
-            <SectionHead label="Smart Money Bias" badge="ICT" badgeType="badge-amber" />
+            <SectionHead label="Smart Money Bias" badge="ICT" badgeType="badge-muted" />
             <BiasGauge bull={bullF} bear={bearF} bias={ictBias} />
             <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
               {[
@@ -657,7 +657,7 @@ function AppInner() {
               <KeyStats stats={data.fundamentals.stats} currency={data.profile?.currency} />
             </div>
             <div className="card" style={{ padding: 24 }}>
-              <SectionHead label="Ownership Structure" badge="Bandarmologi" badgeType="badge-blue" />
+              <SectionHead label="Ownership Structure" badge="Bandarmologi" badgeType="badge-accent" />
               <OwnershipBar ownership={data.fundamentals.ownership} />
             </div>
           </div>
@@ -680,7 +680,7 @@ function AppInner() {
               <p style={{
                 fontSize: 13, fontWeight: 400, lineHeight: 1.85,
                 color: 'var(--ink2)',
-                borderLeft: '2px solid var(--accent)',
+                borderLeft: '2px solid var(--ink2)',
                 paddingLeft: 14, fontStyle: 'italic',
               }}>
                 "{data.ai_reasoning}"
@@ -709,7 +709,7 @@ function AppInner() {
               {[
                 ['P&L', `${(satinStatus.daily_pnl_usd ?? 0) >= 0 ? '+' : ''}$${(satinStatus.daily_pnl_usd ?? 0).toFixed(2)}`, (satinStatus.daily_pnl_usd ?? 0) >= 0 ? 'var(--pos)' : 'var(--neg)'],
                 ['Trades',  satinStatus.session_trades ?? 0, 'var(--ink)'],
-                ['Balance', `$${(satinStatus.account_balance ?? 30000).toLocaleString()}`, 'var(--amber)'],
+                ['Balance', `$${(satinStatus.account_balance ?? 30000).toLocaleString()}`, 'var(--ink2)'],
                 ['Max Loss',`${(satinStatus.risk_rules?.max_daily_loss_pct ?? 2)}%`, 'var(--neg)'],
               ].map(([l, v, c]) => (
                 <div key={l} style={{ background: 'var(--surface2)', borderRadius: 6, padding: '8px 9px' }}>
@@ -732,7 +732,7 @@ function AppInner() {
             ) : (
               <p style={{
                 fontSize: 12, lineHeight: 1.75, color: 'var(--ink2)',
-                borderLeft: '2px solid var(--accent)', paddingLeft: 11,
+                borderLeft: '2px solid var(--ink2)', paddingLeft: 11,
                 fontStyle: 'italic',
               }}>
                 "{data.ai_reasoning || 'No significant signals detected.'}"
@@ -791,15 +791,15 @@ function AppInner() {
               style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: 8 }}
             >
               <div style={{
-                width: 22, height: 22, background: 'var(--accent)',
+                width: 22, height: 22, background: 'var(--ink)',
                 borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>AQ</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: 'var(--bg)', letterSpacing: '-0.01em' }}>AQ</span>
               </div>
               <span style={{
                 fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
                 letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--ink)',
-              }}>APEXQ</span>
+              }}>CREST</span>
             </button>
 
             {/* Divider */}
@@ -814,7 +814,7 @@ function AppInner() {
                     onClick={() => id === 'home' ? (setActiveView('home'), setHasSearched(false)) : setActiveView(id)}
                     data-demo={id === 'demo' ? 'true' : undefined}
                     style={{
-                      background: isActive ? 'var(--surface2)' : 'none',
+                      background: isActive ? 'var(--surface3)' : 'none',
                       border: `1px solid ${isActive ? 'var(--border)' : 'transparent'}`,
                       borderRadius: 6, padding: '4px 12px',
                       fontFamily: 'var(--mono)', fontSize: 8, fontWeight: isActive ? 500 : 400,
@@ -854,11 +854,11 @@ function AppInner() {
                 }}
               />
               <button onClick={() => fetchData()} style={{
-                background: 'var(--accent)', border: 'none',
+                background: 'var(--ink)', border: 'none',
                 padding: '7px 16px', flexShrink: 0,
                 fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 500,
                 letterSpacing: '0.12em', textTransform: 'uppercase',
-                color: '#fff', transition: 'opacity .15s',
+                color: 'var(--bg)', transition: 'opacity .15s', borderRadius: '0 4px 4px 0',
               }}
               onMouseEnter={e => e.currentTarget.style.opacity = '.8'}
               onMouseLeave={e => e.currentTarget.style.opacity = '1'}>

@@ -4,7 +4,7 @@ import { API } from "../../config";
 
 // ─── Shared UI Components ──────────────────────────────────────
 
-const Spinner = ({ size = 16, color = 'var(--gold)' }) => (
+const Spinner = ({ size = 16, color = 'var(--ink)' }) => (
   <div style={{
     width: size, height: size, flexShrink: 0,
     border: `1.5px solid var(--border2)`,
@@ -23,7 +23,7 @@ const Toggle = ({ value, onChange, label }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => onChange(!value)}>
     <div style={{
       width: 36, height: 20, borderRadius: 10,
-      background: value ? 'var(--gold)' : 'var(--surface3)',
+      background: value ? 'var(--surface4)' : 'var(--surface3)',
       border: `1px solid ${value ? 'transparent' : 'var(--border2)'}`,
       position: 'relative', transition: 'all .2s', flexShrink: 0
     }}>
@@ -40,7 +40,7 @@ const Toggle = ({ value, onChange, label }) => (
 );
 
 const SectionTitle = ({ children }) => (
-  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--gold)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>{children}</div>
+  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>{children}</div>
 );
 
 // ─── Equity Curve Chart ────────────────────────────────────────
@@ -51,7 +51,7 @@ function EquityCurveChart({ data, initialBalance }) {
   if (!data?.length || !isMounted) return <div style={{ height: 340 }} />;
 
   const isProfit = data[data.length - 1].balance >= initialBalance;
-  const accentColor = isProfit ? "#10b981" : "#f43f5e";
+  const accentColor = isProfit ? "var(--pos)" : "var(--neg)";
   const balances = data.map(d => d.balance);
   const minBal = Math.min(...balances, initialBalance);
   const maxBal = Math.max(...balances, initialBalance);
@@ -117,7 +117,7 @@ function WinLossBar({ wins, losses, be }) {
 function RegimeBadge({ regime }) {
   const map = {
     LOW_VOL_BULLISH : { cls: "badge-green", label: "BULL" },
-    SIDEWAYS_CHOP   : { cls: "badge-gold",  label: "CHOP" },
+    SIDEWAYS_CHOP   : { cls: "badge-muted",  label: "CHOP" },
     HIGH_VOL_BEARISH: { cls: "badge-red",   label: "BEAR" },
   };
   const cfg = map[regime] || { cls: "badge-muted", label: regime?.replace(/_/g,' ').slice(0,6) || '?' };
@@ -129,7 +129,7 @@ function IctBadge({ strength }) {
   const map = {
     STRONG     : { color: 'var(--green)', bg: 'rgba(0,255,136,0.1)' },
     VERY_STRONG: { color: 'var(--green)', bg: 'rgba(0,255,136,0.15)' },
-    MODERATE   : { color: 'var(--gold)',  bg: 'rgba(255,193,7,0.1)' },
+    MODERATE   : { color: 'var(--ink)',  bg: 'rgba(255,193,7,0.1)' },
     WEAK       : { color: 'var(--red)',   bg: 'rgba(255,68,102,0.1)' },
   };
   const cfg = map[strength] || { color: 'var(--ink2)', bg: 'transparent' };
@@ -148,9 +148,9 @@ function MetricCard({ label, value, color, sublabel, icon }) {
       <div style={{ fontFamily: 'var(--mono)', fontSize: "8px", color: "var(--ink2)", letterSpacing: "0.15em",
         marginBottom: "12px", display: "flex", justifyContent: "space-between", textTransform: 'uppercase' }}>
         <span>{label}</span>
-        {icon && <span style={{ color: 'var(--gold)' }}>[{icon}]</span>}
+        {icon && <span style={{ color: 'var(--ink)' }}>[{icon}]</span>}
       </div>
-      <div style={{ fontSize: "26px", fontWeight: 800, color, letterSpacing: "-0.02em", fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--mono)' }}>
+      <div style={{ fontSize: "26px", fontWeight: 600, color, letterSpacing: "-0.02em", fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--mono)' }}>
         {value}
       </div>
       {sublabel && <div style={{ fontFamily: 'var(--mono)', fontSize: "7px", color: "var(--ink2)", marginTop: "8px", textTransform: 'uppercase', letterSpacing: '0.05em' }}>{sublabel}</div>}
@@ -342,10 +342,10 @@ export default function QuantumPortfolioSimulator() {
 
       {/* ── PAGE HEADER ── */}
       <div className="anim" style={{ marginBottom: 40 }}>
-        <p style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 12 }}>
+        <p style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--ink)', marginBottom: 12 }}>
           Time Machine · Portfolio Backtest Engine v2.0
         </p>
-        <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--ink)', lineHeight: 1.1, marginBottom: 14 }}>
+        <h1 style={{ fontSize: 38, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--ink)', lineHeight: 1.1, marginBottom: 14 }}>
           Quantum Portfolio Simulator
         </h1>
         <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.7, maxWidth: 680 }}>
@@ -364,7 +364,7 @@ export default function QuantumPortfolioSimulator() {
               const active = config.scan_universe === u;
               return (
                 <button key={u} onClick={() => setCfg('scan_universe', u)} style={{
-                  background: active ? 'var(--gold)' : 'var(--surface3)',
+                  background: active ? 'var(--ink)' : 'var(--surface3)',
                   border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                   borderRadius: 6, padding: '7px 16px',
                   fontFamily: 'var(--mono)', fontSize: 9, fontWeight: active ? 700 : 400,
@@ -376,7 +376,7 @@ export default function QuantumPortfolioSimulator() {
           </div>
 
           <button onClick={runSim} disabled={isRunning} style={{
-            background: isRunning ? 'var(--surface3)' : 'var(--gold)',
+            background: isRunning ? 'var(--surface3)' : 'var(--ink)',
             border: 'none', color: isRunning ? 'var(--ink3)' : '#ffffffff',
             padding: '9px 28px', borderRadius: 8,
             fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
@@ -488,7 +488,7 @@ export default function QuantumPortfolioSimulator() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "14px" }}>
               {[
                 { key: "regime_size_bull", label: "Bull Regime Scale",  color: 'var(--green)', note: "×1.0 = full size" },
-                { key: "regime_size_chop", label: "Chop Regime Scale",  color: 'var(--gold)',  note: "×0.6 = reduced" },
+                { key: "regime_size_chop", label: "Chop Regime Scale",  color: 'var(--ink)',  note: "×0.6 = reduced" },
               ].map(({ key, label, color, note }) => (
                 <div key={key}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7 }}>
@@ -514,10 +514,10 @@ export default function QuantumPortfolioSimulator() {
           <div style={{ display: 'flex', gap: 0, alignItems: 'center', flexWrap: 'wrap' }}>
             {[
               { label: 'Screener', sub: 'Score ≥ ' + config.min_screener_score, color: 'var(--green)', icon: '①' },
-              { label: 'HMM Soft', sub: 'Conf → Size Scale', color: 'var(--purple)', icon: '②' },
-              { label: 'ICT Soft', sub: 'Strength → Size Scale', color: 'var(--blue)', icon: '③' },
-              { label: 'Kelly Size', sub: config.use_adaptive_kelly ? 'Adaptive ' + (config.kelly_fraction * 100).toFixed(0) + '%K' : 'Fixed ' + config.risk_per_trade + '%', color: 'var(--gold)', icon: '④' },
-              { label: 'Partial TP', sub: config.use_partial_tp ? '1.5R Lock' : 'Disabled', color: 'var(--amber)', icon: '⑤' },
+              { label: 'HMM Soft', sub: 'Conf → Size Scale', color: 'var(--ink2)', icon: '②' },
+              { label: 'ICT Soft', sub: 'Strength → Size Scale', color: 'var(--ink2)', icon: '③' },
+              { label: 'Kelly Size', sub: config.use_adaptive_kelly ? 'Adaptive ' + (config.kelly_fraction * 100).toFixed(0) + '%K' : 'Fixed ' + config.risk_per_trade + '%', color: 'var(--ink)', icon: '④' },
+              { label: 'Partial TP', sub: config.use_partial_tp ? '1.5R Lock' : 'Disabled', color: 'var(--ink2)', icon: '⑤' },
             ].map(({ label, sub, color, icon }, i, arr) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
                 <div style={{ textAlign: 'center', padding: '8px 16px' }}>
@@ -626,7 +626,7 @@ export default function QuantumPortfolioSimulator() {
                   ].map(({label, val, color}) => (
                     <div key={label}>
                       <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink3)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-                      <div style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{val}</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color, fontVariantNumeric: 'tabular-nums' }}>{val}</div>
                     </div>
                   ))}
                 </div>
@@ -809,11 +809,11 @@ export default function QuantumPortfolioSimulator() {
                 <span style={{ opacity: 0.3 }}>|</span>
                 <span>Kelly Avg: {(result.summary.kelly_avg_fraction * 100).toFixed(1)}%K</span>
                 <span style={{ opacity: 0.3 }}>|</span>
-                <span style={{ color: result.summary.max_leverage_used > 1.0 ? 'var(--red)' : 'var(--gold)' }}>
+                <span style={{ color: result.summary.max_leverage_used > 1.0 ? 'var(--red)' : 'var(--ink)' }}>
                   Max Leverage: {result.summary.max_leverage_used}x
                 </span>
                 <span style={{ opacity: 0.3 }}>|</span>
-                <span style={{ color: 'var(--gold)' }}>
+                <span style={{ color: 'var(--ink)' }}>
                   {result.summary.trades_filtered || 0} trades filtered
                 </span>
               </div>
@@ -836,13 +836,13 @@ export default function QuantumPortfolioSimulator() {
           {gateStats && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
               {[
-                { label: 'Gate Filter Rate', value: `${gateStats.filterRate}%`, sub: 'Trades blocked by 3-layer gate', color: 'var(--purple)' },
-                { label: 'Avg Regime Confidence', value: `${gateStats.avgRegConf}%`, sub: 'Mean HMM confidence at entry', color: 'var(--blue)' },
+                { label: 'Gate Filter Rate', value: `${gateStats.filterRate}%`, sub: 'Trades blocked by 3-layer gate', color: 'var(--ink2)' },
+                { label: 'Avg Regime Confidence', value: `${gateStats.avgRegConf}%`, sub: 'Mean HMM confidence at entry', color: 'var(--ink2)' },
                 { label: 'Strong ICT Entries', value: gateStats.strongICT, sub: 'STRONG/VERY_STRONG signals', color: 'var(--green)' },
               ].map(({ label, value, sub, color }) => (
                 <div key={label} className="card" style={{ padding: '14px 18px', background: 'var(--surface2)', borderLeft: `2px solid ${color}` }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 800, color }}>{value}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 600, color }}>{value}</div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginTop: 4 }}>{sub}</div>
                 </div>
               ))}
@@ -879,10 +879,10 @@ export default function QuantumPortfolioSimulator() {
                 { label: "Sharpe Ratio",     value: result.summary.sharpe_ratio.toFixed(3),  color: result.summary.sharpe_ratio >= 1 ? "var(--green)" : "var(--red)",   icon: "ALPHA", sub: "≥1.0 ideal · daily returns" },
                 { label: "Sortino Ratio",    value: result.summary.sortino_ratio.toFixed(3), color: result.summary.sortino_ratio >= 1 ? "var(--green)" : "var(--red)",  icon: "RISK",  sub: "≥1.0 ideal · downside only" },
                 { label: "Max Drawdown",     value: `${result.summary.max_drawdown_pct}%`,   color: result.summary.max_drawdown_pct > -15 ? "var(--green)" : "var(--red)", icon: "DD", sub: "< -15% dangerous" },
-                { label: "Profit Factor",    value: result.summary.profit_factor.toFixed(3), color: result.summary.profit_factor >= 1.5 ? "var(--green)" : "var(--gold)", icon: "PF", sub: "≥1.5 ideal" },
+                { label: "Profit Factor",    value: result.summary.profit_factor.toFixed(3), color: result.summary.profit_factor >= 1.5 ? "var(--green)" : "var(--ink)", icon: "PF", sub: "≥1.5 ideal" },
                 { label: "Win Rate",         value: `${result.summary.win_rate_pct}%`,        color: result.summary.win_rate_pct >= 50 ? "var(--green)" : "var(--red)",  icon: "HIT",  sub: "≥50% ideal" },
                 { label: "Total Trades",     value: result.summary.total_trades,             color: "var(--ink)", icon: "QTY",  sub: `${result.summary.trades_filtered||0} filtered out` },
-                { label: "Calmar Ratio",     value: result.summary.calmar_ratio.toFixed(3),  color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--gold)", icon: "CAL", sub: "≥0.5 ideal" },
+                { label: "Calmar Ratio",     value: result.summary.calmar_ratio.toFixed(3),  color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--ink)", icon: "CAL", sub: "≥0.5 ideal" },
                 { label: "Expectancy/Trade", value: `$${Number(result.summary.expectancy_usd).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0})}`, color: isProfit ? "var(--green)" : "var(--red)", icon: "EXP", sub: "avg per trade" },
                 { label: "Max Leverage",     value: `${result.summary.max_leverage_used}x`, color: result.summary.max_leverage_used > 1.2 ? "var(--red)" : "var(--ink)", icon: "LEV", sub: "Cap: 1.0x (Institutional)" },
               ].map(({ label, value, color, icon, sub }) => (
@@ -909,7 +909,7 @@ export default function QuantumPortfolioSimulator() {
               ].map(({ label, trade, accent }) => trade && (
                 <div key={label} className="card" style={{ background: 'var(--surface2)', border: `1px solid ${accent}22`, padding: "20px" }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: "9px", color: "var(--ink)", letterSpacing: "0.15em", marginBottom: "12px", textTransform: 'uppercase' }}>{label}</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: "18px", fontWeight: 800, color: 'var(--ink)' }}>{trade.ticker}</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: "18px", fontWeight: 600, color: 'var(--ink)' }}>{trade.ticker}</div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: "14px", fontWeight: 700, color: accent, marginTop: "6px" }}>
                     {trade.pnl_usd >= 0 ? "+" : ""}${trade.pnl_usd.toLocaleString(undefined, {minimumFractionDigits: 2})}
                     <span style={{ fontSize: '10px', marginLeft: 8, opacity: 0.8 }}>
@@ -986,7 +986,7 @@ export default function QuantumPortfolioSimulator() {
                   {filteredTrades.slice().reverse().map((t, i) => {
                     const isWin  = t.outcome === "WIN";
                     const isLoss = t.outcome === "LOSS";
-                    const pnlColor = isWin ? "var(--green)" : isLoss ? "var(--red)" : "var(--gold)";
+                    const pnlColor = isWin ? "var(--green)" : isLoss ? "var(--red)" : "var(--ink)";
                     const techFlags = [
                       t.tech_ema_aligned ? "EMA" : null,
                       t.tech_rsi_ok      ? "RSI" : null,
@@ -1003,9 +1003,9 @@ export default function QuantumPortfolioSimulator() {
                         <span style={{ fontFamily: 'var(--mono)', color: "var(--ink2)", fontSize: 9 }}>#{t.trade_id}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: 'var(--ink)' }}>{t.ticker}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
-                          color: t.direction === "LONG" ? "var(--blue)" : "var(--amber)" }}>{t.direction}</span>
+                          color: t.direction === "LONG" ? "var(--ink2)" : "var(--ink2)" }}>{t.direction}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10,
-                          color: (t.screener_score || 0) >= 80 ? "var(--green)" : "var(--gold)" }}>{t.screener_score ?? "?"}</span>
+                          color: (t.screener_score || 0) >= 80 ? "var(--green)" : "var(--ink)" }}>{t.screener_score ?? "?"}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: "var(--ink)" }}>{t.entry_date?.slice(5)}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: "var(--ink)" }}>{t.exit_date?.slice(5)}</span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: pnlColor, fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -1024,7 +1024,7 @@ export default function QuantumPortfolioSimulator() {
                               <span key={flag} style={{
                                 fontFamily: 'var(--mono)', fontSize: 6, fontWeight: 700,
                                 color: active ? '#000' : 'var(--ink3)',
-                                background: active ? 'var(--gold)' : 'transparent',
+                                background: active ? 'var(--ink)' : 'transparent',
                                 border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                                 padding: '1px 3px', borderRadius: 2,
                               }}>{flag}</span>
@@ -1033,10 +1033,10 @@ export default function QuantumPortfolioSimulator() {
                         </div>
                         {/* Quality + TP mult */}
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)' }}>
-                          <span style={{ color: (t.quality_score||0) >= 80 ? 'var(--green)' : (t.quality_score||0) >= 60 ? 'var(--gold)' : 'var(--red)', fontWeight: 700 }}>
+                          <span style={{ color: (t.quality_score||0) >= 80 ? 'var(--green)' : (t.quality_score||0) >= 60 ? 'var(--ink)' : 'var(--red)', fontWeight: 700 }}>
                             {t.quality_score?.toFixed(0) || '?'}
                           </span>
-                          {t.tp_multiplier && t.tp_multiplier !== 1 ? <span style={{ color: 'var(--purple)', marginLeft: 4 }}>×{t.tp_multiplier}TP</span> : ''}
+                          {t.tp_multiplier && t.tp_multiplier !== 1 ? <span style={{ color: 'var(--ink2)', marginLeft: 4 }}>×{t.tp_multiplier}TP</span> : ''}
                         </span>
                       </div>
                     );
@@ -1055,10 +1055,10 @@ export default function QuantumPortfolioSimulator() {
                 {[
                   { label: "Average Win",     value: `+${result.summary.avg_win_pct}%`,    color: "var(--green)" },
                   { label: "Average Loss",    value: `${result.summary.avg_loss_pct}%`,    color: "var(--red)" },
-                  { label: "Win Rate",        value: `${result.summary.win_rate_pct}%`,    color: "var(--blue)" },
-                  { label: "Profit Factor",   value: result.summary.profit_factor.toFixed(3), color: result.summary.profit_factor > 1.5 ? "var(--green)" : "var(--gold)" },
+                  { label: "Win Rate",        value: `${result.summary.win_rate_pct}%`,    color: "var(--ink2)" },
+                  { label: "Profit Factor",   value: result.summary.profit_factor.toFixed(3), color: result.summary.profit_factor > 1.5 ? "var(--green)" : "var(--ink)" },
                   { label: "Expectancy/Trade",value: `$${Number(result.summary.expectancy_usd).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0})}`, color: isProfit ? "var(--green)" : "var(--red)" },
-                  { label: "Kelly Avg Frac",  value: `${(result.summary.kelly_avg_fraction*100).toFixed(1)}%K`, color: "var(--gold)" },
+                  { label: "Kelly Avg Frac",  value: `${(result.summary.kelly_avg_fraction*100).toFixed(1)}%K`, color: "var(--ink)" },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: "10px", color: "var(--ink2)", textTransform: 'uppercase' }}>{label}</span>
@@ -1072,11 +1072,11 @@ export default function QuantumPortfolioSimulator() {
                 <SectionTitle>Portfolio Stability</SectionTitle>
                 {[
                   { label: "Max Drawdown",  value: `${result.summary.max_drawdown_pct}%`,     color: result.summary.max_drawdown_pct > -15 ? "var(--green)" : "var(--red)" },
-                  { label: "Sharpe Ratio",  value: result.summary.sharpe_ratio.toFixed(3),    color: result.summary.sharpe_ratio >= 1 ? "var(--green)" : "var(--gold)" },
-                  { label: "Sortino Ratio", value: result.summary.sortino_ratio.toFixed(3),   color: result.summary.sortino_ratio >= 1 ? "var(--green)" : "var(--gold)" },
-                  { label: "Calmar Ratio",  value: result.summary.calmar_ratio.toFixed(3),    color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--gold)" },
+                  { label: "Sharpe Ratio",  value: result.summary.sharpe_ratio.toFixed(3),    color: result.summary.sharpe_ratio >= 1 ? "var(--green)" : "var(--ink)" },
+                  { label: "Sortino Ratio", value: result.summary.sortino_ratio.toFixed(3),   color: result.summary.sortino_ratio >= 1 ? "var(--green)" : "var(--ink)" },
+                  { label: "Calmar Ratio",  value: result.summary.calmar_ratio.toFixed(3),    color: result.summary.calmar_ratio >= 0.5 ? "var(--green)" : "var(--ink)" },
                   { label: "Total Return",  value: `${result.summary.total_return_pct >= 0 ? "+" : ""}${result.summary.total_return_pct}%`, color: isProfit ? "var(--green)" : "var(--red)" },
-                  { label: "Trades Blocked",value: `${result.summary.trades_filtered || 0}`,  color: "var(--purple)" },
+                  { label: "Trades Blocked",value: `${result.summary.trades_filtered || 0}`,  color: "var(--ink2)" },
                 ].map(({ label, value, color }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: "1px solid var(--border)" }}>
                     <span style={{ fontFamily: 'var(--mono)', fontSize: "10px", color: "var(--ink2)", textTransform: 'uppercase' }}>{label}</span>
@@ -1096,17 +1096,17 @@ export default function QuantumPortfolioSimulator() {
                     if (!trades.length) return (
                       <div key={mult} style={{ flex: 1, minWidth: 140, padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderLeft: `3px solid var(--border)`, opacity: 0.5 }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase' }}>{emoji} {label}</div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 800, color: 'var(--ink2)', marginTop: 8 }}>0</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--ink2)', marginTop: 8 }}>0</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink3)', marginTop: 4 }}>No trades — needs ADX≥25 + EMA aligned + momentum</div>
                       </div>
                     );
                     const wr  = (trades.filter(t=>t.outcome==="WIN").length/trades.length*100).toFixed(0);
                     const pnl = trades.reduce((a,t)=>a+t.pnl_usd,0);
-                    const col = mult === 1.5 ? 'var(--green)' : 'var(--gold)';
+                    const col = mult === 1.5 ? 'var(--green)' : 'var(--ink)';
                     return (
                       <div key={mult} style={{ flex: 1, minWidth: 140, padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderLeft: `3px solid ${col}` }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: col, fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>{emoji} {label}</div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>{trades.length}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 600, color: 'var(--ink)' }}>{trades.length}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginTop: 2 }}>trades</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
                           <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: +wr>=50?'var(--green)':'var(--red)', fontWeight: 700 }}>{wr}% WR</span>
@@ -1175,8 +1175,8 @@ export default function QuantumPortfolioSimulator() {
                   {[
                     { min: 90, max: 101, label: "A+ (90-100)", color: 'var(--green)', scale: "×1.00" },
                     { min: 70, max: 90,  label: "A  (70-89)",  color: '#22d3ee',       scale: "×0.75" },
-                    { min: 50, max: 70,  label: "B  (50-69)",  color: 'var(--gold)',   scale: "×0.55" },
-                    { min: 30, max: 50,  label: "C  (30-49)",  color: 'var(--amber)',  scale: "×0.35" },
+                    { min: 50, max: 70,  label: "B  (50-69)",  color: 'var(--ink)',   scale: "×0.55" },
+                    { min: 30, max: 50,  label: "C  (30-49)",  color: 'var(--ink2)',  scale: "×0.35" },
                     { min: 0,  max: 30,  label: "D  (<30)",    color: 'var(--red)',    scale: "×0.20" },
                   ].map(({ min, max, label, color, scale }) => {
                     const bucket = result.trades.filter(t => (t.quality_score || 0) >= min && (t.quality_score || 0) < max);
@@ -1187,7 +1187,7 @@ export default function QuantumPortfolioSimulator() {
                       <div key={label} style={{ flex: 1, minWidth: 110, padding: '14px 16px', background: 'var(--surface3)', borderRadius: 8, borderTop: `3px solid ${color}` }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color, marginBottom: 8 }}>Size {scale}</div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 800, color }}>{bucket.length}</div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color }}>{bucket.length}</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginTop: 2 }}>trades</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: +wr >= 50 ? 'var(--green)' : 'var(--red)', marginTop: 6, fontWeight: 600 }}>{wr}% WR</div>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: pnl>=0?'var(--green)':'var(--red)', marginTop: 2 }}>
@@ -1206,7 +1206,7 @@ export default function QuantumPortfolioSimulator() {
                   {result.trades.map((t, i) => {
                     const q = t.quality_score || 50;
                     const h = Math.max(8, (q / 100) * 56);
-                    const c = t.outcome === "WIN" ? 'var(--green)' : t.outcome === "LOSS" ? 'var(--red)' : 'var(--gold)';
+                    const c = t.outcome === "WIN" ? 'var(--green)' : t.outcome === "LOSS" ? 'var(--red)' : 'var(--ink)';
                     return (
                       <div key={i} title={`#${t.trade_id} ${t.ticker} Q:${q}`}
                         style={{ width: 6, height: h, background: c, opacity: 0.8, borderRadius: 2, flexShrink: 0 }} />
@@ -1238,7 +1238,7 @@ export default function QuantumPortfolioSimulator() {
                     const pnlWith    = withFlag.reduce((a,t)=>a+t.pnl_usd,0);
                     const pnlWithout = withoutFlag.reduce((a,t)=>a+t.pnl_usd,0);
                     const impact = wrWith - wrWithout;
-                    const color  = impact > 0 ? 'var(--green)' : impact < -2 ? 'var(--red)' : 'var(--gold)';
+                    const color  = impact > 0 ? 'var(--green)' : impact < -2 ? 'var(--red)' : 'var(--ink)';
                     return (
                       <div key={key} style={{ padding: '16px', background: 'var(--surface3)', borderRadius: 8, borderTop: `3px solid ${color}` }}>
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, color: 'var(--ink)', marginBottom: 4, textTransform: 'uppercase' }}>{label}</div>
@@ -1246,12 +1246,12 @@ export default function QuantumPortfolioSimulator() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                           <div>
                             <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginBottom: 2 }}>WITH flag ({withFlag.length})</div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 800, color: wrWith >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWith.toFixed(0)}%</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 600, color: wrWith >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWith.toFixed(0)}%</div>
                             <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: pnlWith>=0?'var(--green)':'var(--red)' }}>{pnlWith>=0?'+':''}${pnlWith.toFixed(0)}</div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink2)', marginBottom: 2 }}>WITHOUT ({withoutFlag.length})</div>
-                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 800, color: wrWithout >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWithout.toFixed(0)}%</div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 600, color: wrWithout >= 50 ? 'var(--green)' : 'var(--red)' }}>{wrWithout.toFixed(0)}%</div>
                             <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: pnlWithout>=0?'var(--green)':'var(--red)' }}>{pnlWithout>=0?'+':''}${pnlWithout.toFixed(0)}</div>
                           </div>
                         </div>
@@ -1271,7 +1271,7 @@ export default function QuantumPortfolioSimulator() {
                   const wins = trades.filter(t => t.outcome === "WIN").length;
                   const wr   = (wins/trades.length*100).toFixed(0);
                   const pnl  = trades.reduce((a,t) => a + t.pnl_usd, 0);
-                  const colors = { VERY_STRONG: 'var(--green)', STRONG: 'var(--green)', MODERATE: 'var(--gold)', WEAK: 'var(--red)', VERY_WEAK: 'var(--red)' };
+                  const colors = { VERY_STRONG: 'var(--green)', STRONG: 'var(--green)', MODERATE: 'var(--ink)', WEAK: 'var(--red)', VERY_WEAK: 'var(--red)' };
                   return (
                     <div key={s} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1303,7 +1303,7 @@ export default function QuantumPortfolioSimulator() {
                     const bucket = result.trades.filter(t => t.screener_score >= min && t.screener_score < max);
                     if (!bucket.length) return null;
                     const wr   = (bucket.filter(t=>t.outcome==="WIN").length/bucket.length*100);
-                    const color = wr >= 60 ? 'var(--green)' : wr >= 45 ? 'var(--gold)' : 'var(--red)';
+                    const color = wr >= 60 ? 'var(--green)' : wr >= 45 ? 'var(--ink)' : 'var(--red)';
                     return (
                       <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink2)', width: 50, flexShrink: 0 }}>Score {label}</span>

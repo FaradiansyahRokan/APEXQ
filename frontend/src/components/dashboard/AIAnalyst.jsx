@@ -82,7 +82,7 @@ export default function AIAnalyst({ ticker, apexData, tf = '1D' }) {
 
       {/* Key Metrics Row — always visible */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 1, background: 'var(--border)', borderBottom: '1px solid var(--border)' }}>
-        <MetricTile label="APEX Score"    value={score != null ? `${score}/100` : '—'} color={score >= 70 ? 'var(--green)' : score <= 30 ? 'var(--red)' : 'var(--ink)'} />
+        <MetricTile label="CREST Score"    value={score != null ? `${score}/100` : '—'} color={score >= 70 ? 'var(--green)' : score <= 30 ? 'var(--red)' : 'var(--ink)'} />
         <MetricTile label="Verdict"       value={verdict}   color={verdictColor} />
         <MetricTile label="Win Prob (MC)" value={prob != null ? `${prob}%` : '—'} color={(prob ?? 50) > 50 ? 'var(--green)' : 'var(--red)'} />
         <MetricTile label="Risk/Reward"   value={rr != null ? `1:${rr.toFixed(2)}` : '—'} color="var(--gold)" />

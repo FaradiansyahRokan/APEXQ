@@ -6,7 +6,7 @@ import { API } from "../../config";
 //  INTERNAL SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────────
 
-const Spinner = ({ size = 16, color = 'var(--gold)' }) => (
+const Spinner = ({ size = 16, color = 'var(--ink)' }) => (
   <div style={{
     width: size, height: size, flexShrink: 0,
     border: `1.5px solid var(--border2)`,
@@ -16,7 +16,7 @@ const Spinner = ({ size = 16, color = 'var(--gold)' }) => (
 
 /** Score bar visual — shows fill % with gradient */
 const ScoreBar = ({ score }) => {
-  const color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--gold)' : 'var(--red)';
+  const color = score >= 70 ? 'var(--green)' : score >= 50 ? 'var(--ink)' : 'var(--red)';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 110 }}>
       <div style={{
@@ -27,7 +27,7 @@ const ScoreBar = ({ score }) => {
           height: '100%', width: `${score}%`,
           background: color, borderRadius: 4,
           transition: 'width 0.8s cubic-bezier(.22,1,.36,1)',
-          boxShadow: `0 0 6px ${color}55`,
+          boxShadow: 'none',
         }} />
       </div>
       <span style={{
@@ -42,7 +42,7 @@ const ScoreBar = ({ score }) => {
 /** One dimension chip (sortino / regime / momentum / zscore / vol) */
 const DimChip = ({ label, pts, max }) => {
   const ratio = pts / max;
-  const color = ratio >= 0.7 ? 'var(--green)' : ratio >= 0.4 ? 'var(--gold)' : 'var(--red)';
+  const color = ratio >= 0.7 ? 'var(--green)' : ratio >= 0.4 ? 'var(--ink)' : 'var(--red)';
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
@@ -65,7 +65,7 @@ const DimChip = ({ label, pts, max }) => {
 const StatusBadge = ({ status }) => {
   const map = {
     SATIN_READY: { cls: 'badge-green', label: 'READY' },
-    MARGINAL:    { cls: 'badge-gold',  label: 'MARGINAL' },
+    MARGINAL:    { cls: 'badge-muted',  label: 'MARGINAL' },
     REJECTED:    { cls: 'badge-red',   label: 'REJECT' },
   };
   const cfg = map[status] || { cls: 'badge-muted', label: status };
@@ -75,9 +75,9 @@ const StatusBadge = ({ status }) => {
 /** Market tag */
 const MktTag = ({ market }) => {
   const map = {
-    IDX:    { cls: 'badge-blue',   label: 'IDX' },
-    US:     { cls: 'badge-purple', label: 'US' },
-    CRYPTO: { cls: 'badge-gold',   label: 'CRYPTO' },
+    IDX:    { cls: 'badge-accent',   label: 'IDX' },
+    US:     { cls: 'badge-accent', label: 'US' },
+    CRYPTO: { cls: 'badge-muted',   label: 'CRYPTO' },
     CUSTOM: { cls: 'badge-muted',  label: 'CUSTOM' },
   };
   const cfg = map[market] || { cls: 'badge-muted', label: market };
@@ -95,7 +95,7 @@ const CountPill = ({ icon, count, label, color }) => (
     <span style={{ fontSize: 18 }}>{icon}</span>
     <div>
       <p style={{
-        fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 800,
+        fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 600,
         color, letterSpacing: '-0.03em', lineHeight: 1,
         fontVariantNumeric: 'tabular-nums',
       }}>{count}</p>
@@ -134,13 +134,13 @@ const TickerRow = ({ item, rank, onAnalyze, isTop }) => {
       {isTop && (
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: 2, background: 'var(--gold)', borderRadius: '2px 0 0 2px',
+          width: 2, background: 'var(--ink)', borderRadius: '2px 0 0 2px',
         }} />
       )}
 
       {/* Rank */}
       <span style={{
-        fontFamily: 'var(--mono)', fontSize: 10, color: isTop ? 'var(--gold)' : 'var(--ink4)',
+        fontFamily: 'var(--mono)', fontSize: 10, color: isTop ? 'var(--ink)' : 'var(--ink4)',
         fontWeight: isTop ? 700 : 400, textAlign: 'center',
       }}>
         {isTop ? '★' : rank}
@@ -155,7 +155,7 @@ const TickerRow = ({ item, rank, onAnalyze, isTop }) => {
           }}>{item.ticker}</span>
           <MktTag market={item.market} />
           {isTop && (
-            <span className="badge badge-gold" style={{ fontSize: 7 }}>TOP PICK</span>
+            <span className="badge badge-muted" style={{ fontSize: 7 }}>TOP PICK</span>
           )}
         </div>
         {item.error && (
@@ -212,9 +212,9 @@ const TickerRow = ({ item, rank, onAnalyze, isTop }) => {
       <button
         onClick={() => onAnalyze(item.ticker)}
         style={{
-          background: hovered ? 'var(--gold)' : 'transparent',
+          background: hovered ? 'var(--ink)' : 'transparent',
           border: '1px solid',
-          borderColor: hovered ? 'var(--gold)' : 'var(--border2)',
+          borderColor: hovered ? 'var(--ink)' : 'var(--border2)',
           borderRadius: 6,
           padding: '7px 16px',
           fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
@@ -310,12 +310,12 @@ export default function Screener({ onAnalyze }) {
       <div className="anim" style={{ marginBottom: 40 }}>
         <p style={{
           fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.2em',
-          textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 12,
+          textTransform: 'uppercase', color: 'var(--ink)', marginBottom: 12,
         }}>
           Satin Screener · Quantitative Opportunity Scanner
         </p>
         <h1 style={{
-          fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em',
+          fontSize: 38, fontWeight: 600, letterSpacing: '-0.03em',
           color: 'var(--ink)', lineHeight: 1.1, marginBottom: 14,
         }}>
           Find What's Worth Analyzing
@@ -358,7 +358,7 @@ export default function Screener({ onAnalyze }) {
                 const active = activeMarket === m;
                 return (
                   <button key={m} onClick={() => setActiveMarket(m)} style={{
-                    background: active ? 'var(--gold)' : 'var(--surface3)',
+                    background: active ? 'var(--ink)' : 'var(--surface3)',
                     border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                     borderRadius: 6, padding: '7px 18px',
                     fontFamily: 'var(--mono)', fontSize: 9, fontWeight: active ? 700 : 400,
@@ -377,7 +377,7 @@ export default function Screener({ onAnalyze }) {
               onClick={runScan}
               disabled={scanning}
               style={{
-                background: scanning ? 'var(--surface3)' : 'var(--gold)',
+                background: scanning ? 'var(--surface3)' : 'var(--ink)',
                 border: 'none', color: scanning ? 'var(--ink3)' : '#000',
                 padding: '9px 28px', borderRadius: 8,
                 fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
@@ -429,7 +429,7 @@ export default function Screener({ onAnalyze }) {
               onClick={runCustomScan}
               disabled={scanning || !customInput.trim()}
               style={{
-                background: (scanning || !customInput.trim()) ? 'var(--surface3)' : 'var(--gold)',
+                background: (scanning || !customInput.trim()) ? 'var(--surface3)' : 'var(--ink)',
                 border: 'none',
                 color: (scanning || !customInput.trim()) ? 'var(--ink4)' : '#000',
                 padding: '10px 24px', borderRadius: 8,
@@ -467,7 +467,7 @@ export default function Screener({ onAnalyze }) {
               <div style={{
                 width: 52, height: 52,
                 border: '2px solid var(--border2)',
-                borderTopColor: 'var(--gold)',
+                borderTopColor: 'var(--ink)',
                 borderRadius: '50%',
               }} className="spin-icon" />
               <div style={{
@@ -514,7 +514,7 @@ export default function Screener({ onAnalyze }) {
               icon="🟡"
               count={result.summary.marginal_count}
               label="Marginal"
-              color="var(--gold)"
+              color="var(--ink)"
             />
             <CountPill
               icon=""
@@ -537,7 +537,7 @@ export default function Screener({ onAnalyze }) {
                 display: 'flex', alignItems: 'center', gap: 10,
                 marginBottom: 12, padding: '0 2px',
               }}>
-                <div style={{ width: 2, height: 14, background: 'var(--gold)', borderRadius: 2 }} />
+                <div style={{ width: 2, height: 14, background: 'var(--ink)', borderRadius: 2 }} />
                 <span style={{
                   fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 500,
                   letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink2)',
@@ -557,29 +557,29 @@ export default function Screener({ onAnalyze }) {
                   >
                     <div style={{
                       width: 40, height: 40, borderRadius: 8,
-                      background: 'var(--gold-bg)',
+                      background: 'rgba(255,255,255,0.04)',
                       border: '1px solid rgba(201,169,110,.25)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flexShrink: 0,
                     }}>
                       <span style={{
                         fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 700,
-                        color: 'var(--gold)', letterSpacing: '0.08em',
+                        color: 'var(--ink)', letterSpacing: '0.08em',
                       }}>{market}</span>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{
-                        fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 800,
+                        fontFamily: 'var(--mono)', fontSize: 14, fontWeight: 600,
                         color: 'var(--ink)', letterSpacing: '0.02em', marginBottom: 4,
                       }}>{pick.ticker}</p>
                       <ScoreBar score={pick.score} />
                     </div>
                     <button style={{
-                      background: 'none', border: '1px solid var(--gold3)',
+                      background: 'none', border: '1px solid var(--border3)',
                       borderRadius: 5, padding: '5px 12px',
                       fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600,
                       letterSpacing: '0.1em', textTransform: 'uppercase',
-                      color: 'var(--gold)', cursor: 'pointer',
+                      color: 'var(--ink)', cursor: 'pointer',
                     }}>Analyze</button>
                   </div>
                 ))}
@@ -696,7 +696,7 @@ export default function Screener({ onAnalyze }) {
               letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10,
             }}>Screener Standby</p>
             <p style={{ fontSize: 13, color: 'var(--ink4)', lineHeight: 1.7 }}>
-              Pilih market, lalu klik <strong style={{ color: 'var(--gold)' }}>Run Screener</strong> untuk<br />
+              Pilih market, lalu klik <strong style={{ color: 'var(--ink)' }}>Run Screener</strong> untuk<br />
               mendapatkan ranked list ticker terbaik secara otomatis.
             </p>
           </div>
@@ -710,13 +710,13 @@ export default function Screener({ onAnalyze }) {
           }}>
             {[
               { label: 'Sortino', pts: 30, color: 'var(--green)' },
-              { label: 'Regime',  pts: 25, color: 'var(--purple)' },
-              { label: 'Momentum', pts: 20, color: 'var(--blue)' },
-              { label: 'Z-Score', pts: 15, color: 'var(--amber)' },
+              { label: 'Regime',  pts: 25, color: 'var(--ink2)' },
+              { label: 'Momentum', pts: 20, color: 'var(--ink2)' },
+              { label: 'Z-Score', pts: 15, color: 'var(--ink2)' },
               { label: 'Volatility', pts: 10, color: 'var(--red)' },
             ].map(({ label, pts, color }) => (
               <div key={label} style={{ textAlign: 'center' }}>
-                <p style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 800, color, marginBottom: 4 }}>{pts}</p>
+                <p style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color, marginBottom: 4 }}>{pts}</p>
                 <p style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</p>
               </div>
             ))}

@@ -42,7 +42,7 @@ const ENGINES = {
     subtitle : 'Micro-momentum burst · 3-tick streak entry',
     strategy : 'micro_momentum_burst',
     badge    : 'v1',
-    color    : 'var(--amber)',
+    color    : 'var(--ink3)',
     apiBase  : '/api/hft-rapid',
     wsPath   : '/ws/hft-rapid',
     defaultCfg: {
@@ -89,7 +89,7 @@ const Spark = ({ data = [], w = 140, h = 44 }) => {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const up = vals[vals.length - 1] >= vals[0];
-  const rawC = up ? '#22c55e' : '#ef4444';
+  const rawC = up ? "var(--pos)" : "var(--neg)";
   return (
     <svg width={w} height={h} style={{ display:'block', overflow:'visible' }}>
       <defs>
@@ -118,7 +118,7 @@ const PriceLadder = ({ entry, stop, tp, current }) => {
     { label: 'TP',    price: tp,      color: 'var(--pos)',   pct: pct(tp) },
     { label: 'Entry', price: entry,   color: 'var(--ink2)',  pct: pct(entry) },
     { label: 'Stop',  price: stop,    color: 'var(--neg)',   pct: pct(stop) },
-    { label: 'Now',   price: current, color: 'var(--amber)', pct: pct(current) },
+    { label: 'Now',   price: current, color: 'var(--ink2)', pct: pct(current) },
   ].filter(l => l.price).sort((a, b) => b.pct - a.pct);
   const rr = tp && stop && entry
     ? Math.abs((tp - entry) / (entry - stop)).toFixed(2)
@@ -163,7 +163,7 @@ const PriceLadder = ({ entry, stop, tp, current }) => {
           <span style={{ fontFamily:'var(--mono)', fontSize: 7, color:'var(--ink4)',
             textTransform:'uppercase', letterSpacing:'0.1em' }}>R:R</span>
           <span style={{ fontFamily:'var(--mono)', fontSize: 14, fontWeight: 700,
-            color: parseFloat(rr) >= 2 ? 'var(--pos)' : 'var(--amber)' }}>1:{rr}</span>
+            color: parseFloat(rr) >= 2 ? 'var(--pos)' : 'var(--ink2)' }}>1:{rr}</span>
         </div>
       )}
     </div>
@@ -214,9 +214,9 @@ const DirBadge = ({ d }) => (
 
 const ExitBadge = ({ r }) => {
   const map = { TP:'badge-green', TAKE_PROFIT:'badge-green', SL:'badge-red', STOP:'badge-red',
-    HARD_STOP:'badge-red', TIMEOUT:'badge-amber', MANUAL:'badge-muted',
+    HARD_STOP:'badge-red', TIMEOUT:'badge-muted', MANUAL:'badge-muted',
     TRAIL:'badge-muted', TRAILING:'badge-muted',
-    FLIP:'badge-amber', VAULT_HALT:'badge-red' };
+    FLIP:'badge-muted', VAULT_HALT:'badge-red' };
   const labels = { TP:'TP', TAKE_PROFIT:'TP', SL:'SL', STOP:'Stop', HARD_STOP:'Hard Stop',
     TIMEOUT:'Timeout', MANUAL:'Manual', TRAIL:'Trail', TRAILING:'Trail',
     FLIP:'Flip', VAULT_HALT:'Vault' };
@@ -520,13 +520,13 @@ export default function HFTBot({ initialBalance = 1000 }) {
       {engineMode === 'jackal' && lossPause && (
         <div className="card fade-up" style={{
           padding:'10px 16px', display:'flex', alignItems:'center', gap: 10,
-          background:'var(--amber-dim, rgba(245,158,11,.08))', borderColor:'var(--amber)',
+          background:'var(--amber-dim, rgba(245,158,11,.08))', borderColor:'var(--ink2)',
         }}>
           <span>⏸</span>
           <div style={{ fontSize: 11, color:'var(--ink3)', flex:1 }}>
             Loss pause active — Jackal pausing after streak. Auto-resumes in ~60s.
           </div>
-          <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--amber)' }}>PAUSED</span>
+          <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink2)' }}>PAUSED</span>
         </div>
       )}
 
@@ -557,7 +557,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
 
           {/* Equity */}
           <div style={{ textAlign:'right' }}>
-            <div style={{ fontFamily:'var(--mono)', fontSize: 22, fontWeight: 800,
+            <div style={{ fontFamily:'var(--mono)', fontSize: 22, fontWeight: 600,
               letterSpacing:'-0.03em', color:'var(--ink)', fontVariantNumeric:'tabular-nums', lineHeight: 1 }}>
               ${fmt(equity)}
             </div>
@@ -573,7 +573,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
               <button onClick={startBot} disabled={loading} style={{
                 background:'var(--pos)', border:'none', borderRadius:'var(--radius-sm)',
                 padding:'8px 18px', fontFamily:'var(--mono)', fontSize: 10,
-                fontWeight: 700, color:'#fff', cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: 700, color:'var(--bg)', cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.5 : 1, letterSpacing:'0.06em',
               }}>{loading ? '…' : '▶ Start'}</button>
             ) : (
@@ -582,12 +582,12 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   background:'transparent', border:'1px solid var(--border2)',
                   borderRadius:'var(--radius-sm)', padding:'7px 14px',
                   fontFamily:'var(--mono)', fontSize: 10, fontWeight: 600,
-                  color:'var(--amber)', cursor:'pointer', letterSpacing:'0.06em',
+                  color:'var(--ink2)', cursor:'pointer', letterSpacing:'0.06em',
                 }}>Close All</button>
                 <button onClick={stopBot} disabled={loading} style={{
                   background:'var(--neg)', border:'none', borderRadius:'var(--radius-sm)',
                   padding:'8px 18px', fontFamily:'var(--mono)', fontSize: 10,
-                  fontWeight: 700, color:'#fff', cursor: loading ? 'not-allowed' : 'pointer',
+                  fontWeight: 700, color:'var(--bg)', cursor: loading ? 'not-allowed' : 'pointer',
                   opacity: loading ? 0.5 : 1, letterSpacing:'0.06em',
                 }}>{loading ? '…' : '■ Stop'}</button>
               </>
@@ -635,7 +635,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
             </div>
             <div style={{ width: 1, background:'var(--border)', flexShrink: 0 }}/>
             <div style={{ fontSize: 10, color:'var(--ink3)', lineHeight: 1.6 }}>
-              <strong style={{ color: engineMode === 'jackal' ? 'var(--amber)' : 'var(--ink4)' }}> Jackal</strong>
+              <strong style={{ color: engineMode === 'jackal' ? 'var(--ink2)' : 'var(--ink4)' }}> Jackal</strong>
               {' '}— enters on 3 consecutive momentum ticks, fixed TP/SL, holds 3–12s. High frequency.
             </div>
           </div>
@@ -650,7 +650,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
           { label:'P.Factor',  value: fmt(st.profit_factor ?? 0, 2),          color: clr((st.profit_factor ?? 0) - 1) },
           { label:'Avg PnL',   value: fmtUSD(st.avg_net_pnl ?? 0),            color: clr(st.avg_net_pnl ?? 0) },
           { label:'/Hour',     value: fmt((st.trades_per_hour ?? (st.trades_per_minute ?? 0) * 60), 1), color: null },
-          { label:'Max DD',    value:`${fmt(st.max_drawdown_pct ?? 0, 2)}%`,  color:(st.max_drawdown_pct??0)>5?'var(--neg)':'var(--amber)' },
+          { label:'Max DD',    value:`${fmt(st.max_drawdown_pct ?? 0, 2)}%`,  color:(st.max_drawdown_pct??0)>5?'var(--neg)':'var(--ink2)' },
         ].map(({ label, value, color }) => (
           <div key={label} className="card" style={{ padding:'12px 14px' }}>
             <div style={{ fontFamily:'var(--mono)', fontSize: 8, letterSpacing:'0.1em',
@@ -713,7 +713,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       </div>
                       <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', gap: 12 }}>
                         <div style={{ minWidth: 80 }}>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800,
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 600,
                             color:'var(--ink)', letterSpacing:'-0.01em', marginBottom: 5 }}>{pos.coin}</div>
                           <div style={{ display:'flex', alignItems:'center', gap: 5 }}>
                             <DirBadge d={pos.direction}/>
@@ -729,7 +729,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             value={`$${fmt(pos.stop_price, 4)}`} color="var(--neg)"/>
                         </div>
                         <div style={{ textAlign:'right', minWidth: 90 }}>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 16, fontWeight: 800,
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 16, fontWeight: 600,
                             color: clr(pos.unrealized_pnl), lineHeight: 1, fontVariantNumeric:'tabular-nums' }}>
                             {fmtUSD(pos.unrealized_pnl)}
                           </div>
@@ -773,7 +773,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                             <div className="data-row"><span className="data-label">Capital</span>
                               <span className="data-value num">${fmt(pos.capital || 0)}</span></div>
                             <div className="data-row"><span className="data-label">Z-Score at entry</span>
-                              <span className="data-value num" style={{ color:'var(--amber)' }}>
+                              <span className="data-value num" style={{ color:'var(--ink2)' }}>
                                 {pos.entry_zscore ? `${pos.entry_zscore.toFixed(2)}σ` : '—'}</span></div>
                             <div className="data-row"><span className="data-label">OFI at entry</span>
                               <span className="data-value num">
@@ -844,7 +844,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   const ofiColor = m.ofi > 0.6 ? 'var(--pos)' : m.ofi < 0.4 ? 'var(--neg)' : 'var(--ink3)';
                   const zMax   = (predCfg.zscore_entry || 1.8) * 1.6;
                   const quality = Math.min(100, Math.round((zAbs / zMax) * 50 + (hasSig ? 30 : 0) + (m.spread_ok ? 20 : 0)));
-                  const qualityColor = quality >= 70 ? 'var(--pos)' : quality >= 40 ? 'var(--amber)' : 'var(--ink4)';
+                  const qualityColor = quality >= 70 ? 'var(--pos)' : quality >= 40 ? 'var(--ink2)' : 'var(--ink4)';
                   return (
                     <div key={m.coin} className="card" style={{ padding:'14px 16px',
                       background: hasSig && !inPos ? clrDim(isLong ? 1 : -1) : 'var(--surface)',
@@ -852,7 +852,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       transition:'all .3s' }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
                         <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800, color:'var(--ink)' }}>{m.coin}</span>
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 600, color:'var(--ink)' }}>{m.coin}</span>
                           {inPos ? <span className="badge badge-accent">In Position</span>
                             : isLong ? <span className="badge badge-green">↑ Long Setup</span>
                             : isShort ? <span className="badge badge-red">↓ Short Setup</span>
@@ -900,7 +900,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
                         {m.spread_ok
                           ? <span className="badge badge-muted" style={{ fontSize: 8 }}>Normal </span>
-                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide </span>}
+                          : <span className="badge badge-muted" style={{ fontSize: 8 }}>Wide </span>}
                       </div>
                       {inPos && m.position && (
                         <div style={{ marginTop: 12, paddingTop: 12, borderTop:'1px solid var(--border)' }}>
@@ -953,7 +953,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       transition:'all .3s' }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12 }}>
                         <div style={{ display:'flex', alignItems:'center', gap: 8 }}>
-                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 800, color:'var(--ink)' }}>{b.coin}</span>
+                          <span style={{ fontFamily:'var(--mono)', fontSize: 13, fontWeight: 600, color:'var(--ink)' }}>{b.coin}</span>
                           {inPos ? <span className="badge badge-accent">In Position</span>
                             : up ? <span className="badge badge-green">↑ Burst Long</span>
                             : dn ? <span className="badge badge-red">↓ Burst Short</span>
@@ -970,14 +970,14 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↑ Streak</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 600,
                             color: up ? 'var(--pos)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
                             {b.up_streak ?? 0}</div>
                         </div>
                         <div>
                           <div style={{ fontFamily:'var(--mono)', fontSize: 7, letterSpacing:'0.1em',
                             textTransform:'uppercase', color:'var(--ink4)', marginBottom: 4 }}>↓ Streak</div>
-                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 800,
+                          <div style={{ fontFamily:'var(--mono)', fontSize: 18, fontWeight: 600,
                             color: dn ? 'var(--neg)' : 'var(--ink4)', fontVariantNumeric:'tabular-nums' }}>
                             {b.down_streak ?? 0}</div>
                         </div>
@@ -1008,7 +1008,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                         <span style={{ fontFamily:'var(--mono)', fontSize: 9, color:'var(--ink4)' }}>Spread</span>
                         {(b.spread_pct ?? 0) < (jackCfg.max_spread_pct ?? 0.08)
                           ? <span className="badge badge-muted" style={{ fontSize: 8 }}>OK </span>
-                          : <span className="badge badge-amber" style={{ fontSize: 8 }}>Wide </span>}
+                          : <span className="badge badge-muted" style={{ fontSize: 8 }}>Wide </span>}
                       </div>
                     </div>
                   );
@@ -1076,10 +1076,10 @@ export default function HFTBot({ initialBalance = 1000 }) {
                 { label:'Profit Factor', value: fmt(st.profit_factor ?? 0, 2),           color: clr((st.profit_factor??0)-1) },
                 { label:'Sharpe',        value: fmt(st.sharpe_trades ?? 0, 3),            color: clr(st.sharpe_trades??0) },
                 { label:'Total Net PnL', value: fmtUSD(st.total_net_pnl ?? st.net_pnl ?? 0),  color: clr(st.total_net_pnl ?? st.net_pnl ?? 0) },
-                { label:'Total Fees',    value:`−$${fmt(Math.abs(st.total_fees??0), 2)}`, color:'var(--amber)' },
+                { label:'Total Fees',    value:`−$${fmt(Math.abs(st.total_fees??0), 2)}`, color:'var(--ink2)' },
                 { label:'Best Trade',    value: fmtPct(st.best_trade_pct ?? 0),           color:'var(--pos)' },
                 { label:'Worst Trade',   value: fmtPct(st.worst_trade_pct ?? 0),          color:'var(--neg)' },
-                { label:'Max Drawdown',  value:`${fmt(st.max_drawdown_pct??0, 2)}%`,       color:'var(--amber)' },
+                { label:'Max Drawdown',  value:`${fmt(st.max_drawdown_pct??0, 2)}%`,       color:'var(--ink2)' },
                 { label:'Loss Streak',   value: st.max_loss_streak ?? 0,
                   color:(st.max_loss_streak??0)>=3 ? 'var(--neg)' : 'var(--ink3)' },
               ].map(({ label, value, color }) => (
@@ -1117,7 +1117,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   <div className="data-row" style={{ borderBottom:'none' }}>
                     <span className="data-label">Avg Latency</span>
                     <span className="data-value num" style={{
-                      color: status.latency_ms < 150 ? 'var(--pos)' : status.latency_ms < 300 ? 'var(--amber)' : 'var(--neg)' }}>
+                      color: status.latency_ms < 150 ? 'var(--pos)' : status.latency_ms < 300 ? 'var(--ink2)' : 'var(--neg)' }}>
                       {fmt(status.latency_ms, 1)}ms</span>
                   </div>
                 </div>
@@ -1168,7 +1168,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                     <button onClick={vaultResume} style={{
                       background:'var(--pos)', border:'none', borderRadius:'var(--radius-sm)',
                       padding:'6px 14px', fontFamily:'var(--mono)', fontSize: 10,
-                      fontWeight: 700, color:'#fff', cursor:'pointer' }}>Resume</button>
+                      fontWeight: 700, color:'var(--bg)', cursor:'pointer' }}>Resume</button>
                   )}
                 </div>
 
@@ -1177,7 +1177,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                   {[
                     { label:'Starting Balance', value:`$${fmt(vault.initial)}` },
                     { label:'Peak Equity',      value:`$${fmt(vault.peak)}`,   color: clr(vault.peak - vault.initial) },
-                    { label:'Floor (Protected)',value:`$${fmt(vault.floor)}`,   color:'var(--amber)' },
+                    { label:'Floor (Protected)',value:`$${fmt(vault.floor)}`,   color:'var(--ink2)' },
                     { label:'Locked Gains',     value:`$${fmt(Math.max(0, vault.floor - vault.initial))}`, color:'var(--pos)' },
                     { label:'Peak Gain %',      value:`${fmtPct(vault.peak_pct ?? 0)}`, color: clr(vault.peak_pct ?? 0) },
                     { label:'Floor Lock %',     value:`${fmt(vault.floor_pct ?? 0, 2)}%`, color: (vault.floor_pct??0)>0?'var(--pos)':'var(--ink3)' },
@@ -1203,7 +1203,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       <div style={{ height: 8, background:'var(--surface3)', borderRadius: 4, overflow:'hidden' }}>
                         <div style={{
                           height:'100%', borderRadius: 4,
-                          background: 'linear-gradient(90deg, var(--amber), var(--pos))',
+                          background: 'linear-gradient(90deg, var(--ink2), var(--pos))',
                           width:`${Math.min(100, Math.max(0, vault.peak_pct ?? 0) * 10)}%`,
                           transition:'width .5s ease',
                         }}/>
@@ -1211,7 +1211,7 @@ export default function HFTBot({ initialBalance = 1000 }) {
                       <div style={{ display:'flex', justifyContent:'space-between', marginTop: 6 }}>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink4)' }}>
                           Start ${fmt(vault.initial)}</span>
-                        <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--amber)' }}>
+                        <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--ink2)' }}>
                           Floor ${fmt(vault.floor)}</span>
                         <span style={{ fontFamily:'var(--mono)', fontSize: 8, color:'var(--pos)' }}>
                           Peak ${fmt(vault.peak)}</span>
@@ -1379,8 +1379,8 @@ export default function HFTBot({ initialBalance = 1000 }) {
           <div style={{ maxHeight: 176, overflowY:'auto', padding:'5px 0' }}>
             {events.map((ev, i) => {
               const tagMap = { ENTRY:'badge-green', EXIT:'badge-accent', ENGINE:'badge-muted',
-                CIRCUIT:'badge-red', CONFIG:'badge-amber', ERROR:'badge-red',
-                VAULT:'badge-amber', BURST:'badge-green' };
+                CIRCUIT:'badge-red', CONFIG:'badge-muted', ERROR:'badge-red',
+                VAULT:'badge-muted', BURST:'badge-green' };
               return (
                 <div key={i} style={{ padding:'4px 16px', display:'flex', gap: 10, alignItems:'flex-start',
                   background: i === 0 ? 'var(--surface2)' : 'transparent' }}>
