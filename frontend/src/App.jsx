@@ -454,7 +454,7 @@ function AppInner() {
           <span style={{
             fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600,
             color: 'var(--ink2)', letterSpacing: '0.04em',
-          }}>AQ</span>
+          }}>CQ</span>
         </div>
       </div>
       <p style={{
@@ -794,7 +794,7 @@ function AppInner() {
                 width: 22, height: 22, background: 'var(--ink)',
                 borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: 'var(--bg)', letterSpacing: '-0.01em' }}>AQ</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, fontWeight: 600, color: 'var(--bg)', letterSpacing: '-0.01em' }}>CQ</span>
               </div>
               <span style={{
                 fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,

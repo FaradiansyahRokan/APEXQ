@@ -219,7 +219,7 @@ const TickerRow = ({ item, rank, onAnalyze, isTop }) => {
           padding: '7px 16px',
           fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
           letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: hovered ? '#000' : 'var(--ink3)',
+          color: hovered ? 'ffffffff' : 'var(--ink3)',
           transition: 'all .15s ease', whiteSpace: 'nowrap',
           cursor: 'pointer',
         }}
@@ -363,7 +363,7 @@ export default function Screener({ onAnalyze }) {
                     borderRadius: 6, padding: '7px 18px',
                     fontFamily: 'var(--mono)', fontSize: 9, fontWeight: active ? 700 : 400,
                     letterSpacing: '0.1em', textTransform: 'uppercase',
-                    color: active ? '#000' : 'var(--ink3)',
+                    color: active ? '#ffffffff' : 'var(--ink3)',
                     transition: 'all .15s', cursor: 'pointer',
                   }}>
                     {m === 'ALL' ? '⬡ All Markets' : m}
@@ -378,7 +378,7 @@ export default function Screener({ onAnalyze }) {
               disabled={scanning}
               style={{
                 background: scanning ? 'var(--surface3)' : 'var(--ink)',
-                border: 'none', color: scanning ? 'var(--ink3)' : '#000',
+                border: 'none', color: scanning ? 'var(--ink3)' : 'ffffffff',
                 padding: '9px 28px', borderRadius: 8,
                 fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
                 letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -431,7 +431,7 @@ export default function Screener({ onAnalyze }) {
               style={{
                 background: (scanning || !customInput.trim()) ? 'var(--surface3)' : 'var(--ink)',
                 border: 'none',
-                color: (scanning || !customInput.trim()) ? 'var(--ink4)' : '#000',
+                color: (scanning || !customInput.trim()) ? 'var(--ink4)' : 'ffffffff',
                 padding: '10px 24px', borderRadius: 8,
                 fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
                 letterSpacing: '0.1em', textTransform: 'uppercase',
