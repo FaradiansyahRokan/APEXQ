@@ -369,7 +369,7 @@ export default function QuantumPortfolioSimulator() {
                   borderRadius: 6, padding: '7px 16px',
                   fontFamily: 'var(--mono)', fontSize: 9, fontWeight: active ? 700 : 400,
                   letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: active ? '#000' : 'var(--ink2)', cursor: 'pointer', transition: 'all .15s',
+                  color: active ? '#ffffffff' : 'var(--ink2)', cursor: 'pointer', transition: 'all .15s',
                 }}>{u === 'US' ? 'US Markets' : u === 'IDX' ? 'IDX (Indo)' : u === 'UNIVERSAL' ? 'Universal' : u}</button>
               );
             })}
@@ -377,7 +377,7 @@ export default function QuantumPortfolioSimulator() {
 
           <button onClick={runSim} disabled={isRunning} style={{
             background: isRunning ? 'var(--surface3)' : 'var(--gold)',
-            border: 'none', color: isRunning ? 'var(--ink3)' : '#000',
+            border: 'none', color: isRunning ? 'var(--ink3)' : '#ffffffff',
             padding: '9px 28px', borderRadius: 8,
             fontSize: 12, fontWeight: 700, fontFamily: 'var(--mono)',
             letterSpacing: '0.06em', textTransform: 'uppercase',
